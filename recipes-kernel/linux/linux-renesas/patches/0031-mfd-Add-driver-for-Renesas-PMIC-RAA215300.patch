@@ -1,0 +1,219 @@
+From 66a50851b18a5ae3be2bc75cf03c7eac213f3f62 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 2 Dec 2021 21:57:10 +0000
+Subject: [PATCH] mfd: Add driver for Renesas PMIC RAA215300
+
+The RAA215300 contains an RTC (it's same IP found in the ISL1208).
+The existing driver for the ISL1208 works for this PMIC too,
+however the RAA215300 exposes two devices via I2C, one for the RTC
+IP, and one for everything else. The RTC IP has to be enabled
+by the other I2C device, therefore this driver is necessary to get
+the RTC to work.
+
+This driver's purpose is just to deal with the RTC initialization
+for now, no other features supported by the PMIC are being addressed
+at this time.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../bindings/mfd/renesas,raa215300.txt        |  37 ++++++
+ drivers/mfd/Kconfig                           |   9 ++
+ drivers/mfd/Makefile                          |   1 +
+ drivers/mfd/renesas_raa215300.c               | 112 ++++++++++++++++++
+ 4 files changed, 159 insertions(+)
+ create mode 100644 Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
+ create mode 100644 drivers/mfd/renesas_raa215300.c
+
+diff --git a/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt b/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
+new file mode 100644
+index 000000000000..6d211dc3db0a
+--- /dev/null
++++ b/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
+@@ -0,0 +1,37 @@
++* Renesas RAA215300 Power Management Integrated Circuit bindings
++
++The RAA215300 is a high-performance, low cost 9-channel PMIC designed for 32-bit
++and 64-bit MCU and MPU applications. It supports DDR3, DDR3L, DDR4, and LPDDR4
++memory power requirements.
++The internally compensated regulators, built-in Real Time Clock (RTC), 32kHz
++crystal oscillator and coin cell battery charger provide a highly integrated,
++small footprint power solution ideal for System-On-Module (SoM) applications.
++
++The RAA215300 has six high efficiency buck regulators and three LDOs to provide
++the complete system power. The internal device registers and EEPROM can be used
++to configure and optimize the RAA215300 for different application requirements,
++for example: power sequences, output voltages, and switching frequencies.
++Dynamic Voltage Scaling (DVS) and low power Sleep modes are supported.
++
++Although the RAA215300 is an I2C slave that comes with an RTC device (same IP as
++the ISL1208), the RTC IP is actually implemented as an I2C slave on its own with
++its own I2C address, and its software support comes with a completely separated
++driver. In order for the RTC to work properly, it has to be enabled via the PMIC
++slave, and some RTC related features are also dealt with from the PMIC slave
++(e.g. the RTC battery backup charger).
++
++Required properties:
++ - compatible		: Should be "renesas,raa215300".
++ - reg			: I2C slave address.
++
++Optional properties:
++- rtc-enable		: Enables the RTC IP (which is disabled by default).
++
++Example:
++
++	pmic: raa215300@12 {
++		compatible = "renesas,raa215300";
++		reg = <0x12>;
++
++		rtc-enable;
++	};
+diff --git a/drivers/mfd/Kconfig b/drivers/mfd/Kconfig
+index dd938a5d0409..d430f15806cb 100644
+--- a/drivers/mfd/Kconfig
++++ b/drivers/mfd/Kconfig
+@@ -1899,5 +1899,14 @@ config RAVE_SP_CORE
+ 	  Select this to get support for the Supervisory Processor
+ 	  device found on several devices in RAVE line of hardware.
+ 
++config RENESAS_RAA215300
++	tristate "Renesas RAA215300 driver"
++	select REGMAP_I2C
++	select RTC_DRV_ISL1208
++	depends on I2C && OF
++	help
++	  Select this to get support for the Renesas RAA215300 PMIC.
++	  This driver is still in its infancy.
++
+ endmenu
+ endif
+diff --git a/drivers/mfd/Makefile b/drivers/mfd/Makefile
+index 5856a9489cbd..2b75cd802896 100644
+--- a/drivers/mfd/Makefile
++++ b/drivers/mfd/Makefile
+@@ -240,4 +240,5 @@ obj-$(CONFIG_MFD_MXS_LRADC)     += mxs-lradc.o
+ obj-$(CONFIG_MFD_SC27XX_PMIC)	+= sprd-sc27xx-spi.o
+ obj-$(CONFIG_RAVE_SP_CORE)	+= rave-sp.o
+ obj-$(CONFIG_MFD_ROHM_BD718XX)	+= rohm-bd718x7.o
++obj-$(CONFIG_RENESAS_RAA215300) += renesas_raa215300.o
+ 
+diff --git a/drivers/mfd/renesas_raa215300.c b/drivers/mfd/renesas_raa215300.c
+new file mode 100644
+index 000000000000..a77e4195d129
+--- /dev/null
++++ b/drivers/mfd/renesas_raa215300.c
+@@ -0,0 +1,112 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Renesas RAA215300 PMIC driver
++ *
++ * Copyright (C) 2021-2022 Renesas Electronics Corporation
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/i2c.h>
++#include <linux/err.h>
++#include <linux/of.h>
++#include <linux/regmap.h>
++#include <linux/of_platform.h>
++
++#define RAA215300_REG_BLOCK_EN		0x6C
++#define RAA215300_RTC_EN		BIT(6)
++
++struct raa215300 {
++	struct regmap		*regmap;
++	struct i2c_client	*client;
++	bool			rtc_enabled;
++};
++
++static bool raa215300_is_volatile_reg(struct device *dev, unsigned int reg)
++{
++	return true;
++}
++
++static const struct regmap_config raa215300_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.max_register = 0xFF,
++	.volatile_reg = raa215300_is_volatile_reg,
++	.cache_type = REGCACHE_FLAT,
++};
++
++static int raa215300_i2c_probe(struct i2c_client *client,
++			       const struct i2c_device_id *id)
++{
++	struct raa215300 *pmic;
++	int ret;
++
++	pmic = devm_kzalloc(&client->dev, sizeof(*pmic), GFP_KERNEL);
++	if (!pmic)
++		return -ENOMEM;
++
++	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
++		return -ENODEV;
++
++	pmic->regmap = devm_regmap_init_i2c(client, &raa215300_regmap_config);
++	if (IS_ERR(pmic->regmap)) {
++		ret = PTR_ERR(pmic->regmap);
++		dev_err(&client->dev, "Failed to allocate register map: %d\n",
++			ret);
++		return ret;
++	}
++
++	pmic->client = client;
++	i2c_set_clientdata(client, pmic);
++
++	pmic->rtc_enabled = of_property_read_bool(client->dev.of_node,
++						  "rtc-enable");
++
++	if (pmic->rtc_enabled) {
++		regmap_update_bits(pmic->regmap, RAA215300_REG_BLOCK_EN,
++				   RAA215300_RTC_EN, 0x40);
++		dev_info(&client->dev, "RTC enabled\n");
++	}
++
++	dev_info(&client->dev, "RAA215300 initialized");
++
++	return 0;
++}
++
++static int raa215300_i2c_remove(struct i2c_client *i2c)
++{
++	return 0;
++}
++
++
++static const struct of_device_id raa215300_dt_match[] = {
++	{ .compatible = "renesas,raa215300" },
++	{},
++};
++MODULE_DEVICE_TABLE(of, raa215300_dt_match);
++
++static struct i2c_driver raa215300_i2c_driver = {
++	.driver = {
++		   .name = "raa215300",
++		   .of_match_table = of_match_ptr(raa215300_dt_match),
++	},
++	.probe = raa215300_i2c_probe,
++	.remove = raa215300_i2c_remove,
++};
++
++static int __init raa215300_i2c_init(void)
++{
++	return i2c_add_driver(&raa215300_i2c_driver);
++}
++subsys_initcall(raa215300_i2c_init);
++
++static void __exit raa215300_i2c_exit(void)
++{
++	i2c_del_driver(&raa215300_i2c_driver);
++}
++module_exit(raa215300_i2c_exit);
++
++MODULE_DESCRIPTION("Renesas RAA215300 PMIC driver");
++MODULE_AUTHOR("Fabrizio Castro <fabrizio.castro.jz@renesas.com>");
++MODULE_LICENSE("GPL v2");
++MODULE_SOFTDEP("post: rtc_isl1208");
+-- 
+2.25.1
+

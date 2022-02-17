@@ -1,0 +1,50 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:          barcode-poc
+# Required-Start:    mountall udev
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start the Barcode PoC
+### END INIT INFO
+
+PIDFILE=/var/run/barcode-poc.pid
+PROGRAM=/usr/bin/barcode-poc
+CONFIGURATION_FILEPATH=/usr/share/barcode-poc/conf/barcode-poc.ini
+BARCODE_OPTIONS="-c ${CONFIGURATION_FILEPATH}"
+
+# source function library
+. /etc/init.d/functions
+
+test -x /usr/bin/barcode-poc || exit 1
+test -r ${CONFIGURATION_FILEPATH} || exit 1
+
+barcode_poc_start() {
+	echo "Starting Barcode PoC"
+	start-stop-daemon -S -p ${PIDFILE} -x ${PROGRAM} -- ${BARCODE_OPTIONS}
+	echo "Done"
+}
+
+barcode_poc_stop() {
+	echo "Stopping Barcode PoC"
+	start-stop-daemon -K -p ${PIDFILE} -x ${PROGRAM}
+	echo "Done"
+}
+
+case "${1}" in
+	start)
+		barcode_poc_start
+		;;
+	stop)
+		barcode_poc_stop
+		;;
+	restart)
+		barcode_poc_stop
+		barcode_poc_start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+		;;
+esac

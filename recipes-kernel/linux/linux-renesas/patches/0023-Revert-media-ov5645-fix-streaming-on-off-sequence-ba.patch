@@ -1,0 +1,39 @@
+From c46c2050a6a532bb949d6ca735d2e0097773f824 Mon Sep 17 00:00:00 2001
+From: Hien Huynh <hien.huynh.px@renesas.com>
+Date: Wed, 20 Oct 2021 09:20:12 +0700
+Subject: [PATCH] Revert "media: ov5645: fix streaming on/off sequence based on
+ OV5640 driver"
+
+This reverts commit 92537506acbe00f20c11fb359ee39e2aa86a0b66.
+---
+ drivers/media/i2c/ov5645.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/media/i2c/ov5645.c b/drivers/media/i2c/ov5645.c
+index 45e490229f57..9648a6cfbf9f 100644
+--- a/drivers/media/i2c/ov5645.c
++++ b/drivers/media/i2c/ov5645.c
+@@ -1087,10 +1087,20 @@ static int ov5645_s_stream(struct v4l2_subdev *subdev, int enable)
+ 		ret = ov5645_write_reg(ov5645, OV5645_IO_MIPI_CTRL00, 0x45);
+ 		if (ret < 0)
+ 			return ret;
++
++		ret = ov5645_write_reg(ov5645, OV5645_SYSTEM_CTRL0,
++				       OV5645_SYSTEM_CTRL0_START);
++		if (ret < 0)
++			return ret;
+ 	} else {
+ 		ret = ov5645_write_reg(ov5645, OV5645_IO_MIPI_CTRL00, 0x40);
+ 		if (ret < 0)
+ 			return ret;
++
++		ret = ov5645_write_reg(ov5645, OV5645_SYSTEM_CTRL0,
++				       OV5645_SYSTEM_CTRL0_STOP);
++		if (ret < 0)
++			return ret;
+ 	}
+ 
+ 	return 0;
+-- 
+2.25.1
+

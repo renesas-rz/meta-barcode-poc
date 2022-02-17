@@ -1,0 +1,489 @@
+From aa888432f618a342eda1cdf7c82f3fed44b83a25 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 11 Oct 2021 16:03:03 +0100
+Subject: [PATCH] arm64: dts: renesas: Add the Barcode PoC device tree
+ architecture
+
+The Barcode PoC is a design based on the SMARC SoM.
+The SoM sits on the Barcode PoC carrier board, a bespoke PCB.
+The first iteration of the design is based on the RZ/G2L SMARC
+SoM, other iterations might switch to other RZ/G based SMARC SoMs.
+This commit adds the below files:
+* r9a07g044l2-smarc-som.dtsi - to describe the RZ/G2L SMARC SoM
+* barcode-poc-carrier.dtsi - to describe the Barcode PoC carrier board
+* r9a07g044l2-barcode-poc.dts - to describe the RZ/G2L Barcode PoC
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../boot/dts/renesas/barcode-poc-carrier.dtsi | 113 +++++++
+ .../dts/renesas/r9a07g044l2-barcode-poc.dts   |  16 +
+ .../dts/renesas/r9a07g044l2-smarc-som.dtsi    | 314 ++++++++++++++++++
+ 3 files changed, 443 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+ create mode 100644 arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+ create mode 100644 arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-som.dtsi
+
+diff --git a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+new file mode 100644
+index 000000000000..fe37abe5cdc2
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+@@ -0,0 +1,113 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the Barcode PoC carrier board
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++#ifdef RZG2L_GPIO
++# define RZ_GPIO	RZG2L_GPIO
++#endif
++
++/ {
++	vbus0_usb2: regulator-vbus0-usb2 {
++		compatible = "regulator-fixed";
++
++		regulator-name = "USB20_VBUS0";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++	};
++};
++
++&ehci0 {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&ehci1 {
++	status = "okay";
++};
++
++&eth0 {
++	status = "okay";
++};
++
++&hsusb {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&i2c0 {
++	pinctrl-0 = <&i2c0_pins>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
++
++&i2c3 {
++	proximity_sensor: proximity@60 {
++		compatible = "vishay,vcnl4035";
++		reg = <0x60>;
++		status = "okay";
++
++		interrupt-parent = <&pinctrl>;
++		interrupts = <RZ_GPIO(2, 1) IRQ_TYPE_EDGE_FALLING>;
++
++		ired-led = <1>;
++	};
++};
++
++&gpt5 {
++	pinctrl-0 = <&gpt5_pins>;
++	pinctrl-names = "default";
++	channel="channel_A";
++	status = "okay";
++};
++
++&ohci0 {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&ohci1 {
++	status = "okay";
++};
++
++&pinctrl {
++	gpt5_pins: gpt5 {
++		groups = "gpt5_a_b";
++		function = "gpt5";
++	};
++
++	i2c0_pins: i2c0 {
++		pins = "RIIC0_SDA", "RIIC0_SCL";
++		input-enable;
++	};
++
++	/* USB Channel 0 */
++	usb0_pins: usb0 {
++		groups = "usb0_a";
++		function = "usb0";
++	};
++
++	/* USB Channel 1 */
++	usb1_pins: usb1 {
++		groups = "usb1_d";
++		function = "usb1";
++	};
++};
++
++&usb2_phy0 {
++	pinctrl-0 = <&usb0_pins>;
++	pinctrl-names = "default";
++
++	vbus-supply = <&vbus0_usb2>;
++	status = "okay";
++};
++
++&usb2_phy1 {
++	pinctrl-0 = <&usb1_pins>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+new file mode 100644
+index 000000000000..3cf0f814006a
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the RZG2L Dual A55 Barcode PoC
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++/dts-v1/;
++#include "r9a07g044l2-smarc-som.dtsi"
++#include "barcode-poc-carrier.dtsi"
++
++/ {
++	model = "Barcode PoC based on r9a07g044l2";
++	compatible = "renesas,r9a07g044l2-barcode-poc",
++		"renesas,r9a07g044l2-smarc", "renesas,r9a07g044l2";
++};
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-som.dtsi b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-som.dtsi
+new file mode 100644
+index 000000000000..945bdd6160a9
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-som.dtsi
+@@ -0,0 +1,314 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the RZG2L Dual A55 SMARC SoM
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++#include "r9a07g044l2.dtsi"
++#include <dt-bindings/pinctrl/pinctrl-rzg2l.h>
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++	aliases {
++		i2c0 = &i2c0;
++		i2c1 = &i2c1;
++		i2c3 = &i2c3;
++		serial0 = &scif0;
++		serial2 = &scif2;
++		ethernet0 = &eth0;
++		ethernet1 = &eth1;
++	};
++
++	chosen {
++		bootargs = "ignore_loglevel";
++		stdout-path = "serial0:115200n8";
++	};
++
++	memory@48000000 {
++		device_type = "memory";
++		/* first 128MB is reserved for secure area. */
++		reg = <0x0 0x48000000 0x0 0x78000000>;
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		reserved: linux,cma@58000000 {
++			compatible = "shared-dma-pool";
++			linux,cma-default;
++			reusable;
++			reg = <0x0 0x58000000 0x0 0x10000000>;
++		};
++		mmp_reserved: linux,multimedia {
++			compatible = "shared-dma-pool";
++			reusable;
++			reg = <0x00000000 0x68000000 0x0 0x8000000>;
++		};
++	};
++
++	mmngr {
++		compatible = "renesas,mmngr";
++		memory-region = <&mmp_reserved>;
++	};
++
++	mmngrbuf {
++		compatible = "renesas,mmngrbuf";
++	};
++
++	vspm_if {
++			compatible = "renesas,vspm_if";
++	};
++
++	reg_1p8v: regulator0 {
++		compatible = "regulator-fixed";
++		regulator-name = "fixed-1.8V";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++	reg_3p3v: regulator1 {
++		compatible = "regulator-fixed";
++
++		regulator-name = "fixed-3.3V";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++	vccq_sdhi0: regulator-vccq-sdhi0 {
++		compatible = "regulator-gpio";
++
++		regulator-name = "SDHI0 VccQ";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <3300000>;
++		states = <3300000 1 1800000 0>;
++		regulator-boot-on;
++		gpios = <&pinctrl RZG2L_GPIO(39, 0) GPIO_ACTIVE_HIGH>;
++		regulator-always-on;
++	};
++
++	x1_clk: x1-clock {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <24000000>;
++	};
++};
++
++&adc {
++	pinctrl-0 = <&adc_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++&eth0 {
++	pinctrl-0 = <&eth0_pins>;
++	pinctrl-names = "default";
++	phy-handle = <&phy0>;
++	phy-mode = "rgmii";
++	status = "disabled";
++
++	phy0: ethernet-phy@7 {
++		reg = <7>;
++		rxc-skew-psec = <2400>;
++		txc-skew-psec = <2400>;
++		rxdv-skew-psec = <0>;
++		txdv-skew-psec = <0>;
++		rxd0-skew-psec = <0>;
++		rxd1-skew-psec = <0>;
++		rxd2-skew-psec = <0>;
++		rxd3-skew-psec = <0>;
++		txd0-skew-psec = <0>;
++		txd1-skew-psec = <0>;
++		txd2-skew-psec = <0>;
++		txd3-skew-psec = <0>;
++
++		interrupt-parent = <&pinctrl>;
++		interrupts = <RZG2L_GPIO(1, 0) IRQ_TYPE_EDGE_FALLING>;
++	};
++};
++
++&eth1 {
++	pinctrl-0 = <&eth1_pins>;
++	pinctrl-names = "default";
++	phy-handle = <&phy1>;
++	phy-mode = "rgmii";
++	status = "disabled";
++
++	phy1: ethernet-phy@7 {
++		reg = <7>;
++		rxc-skew-psec = <2400>;
++		txc-skew-psec = <2400>;
++		rxdv-skew-psec = <0>;
++		txdv-skew-psec = <0>;
++		rxd0-skew-psec = <0>;
++		rxd1-skew-psec = <0>;
++		rxd2-skew-psec = <0>;
++		rxd3-skew-psec = <0>;
++		txd0-skew-psec = <0>;
++		txd1-skew-psec = <0>;
++		txd2-skew-psec = <0>;
++		txd3-skew-psec = <0>;
++
++		interrupt-parent = <&pinctrl>;
++		interrupts = <RZG2L_GPIO(1, 1) IRQ_TYPE_EDGE_FALLING>;
++	};
++};
++
++&i2c3 {
++	pinctrl-0 = <&i2c3_pins>;
++	pinctrl-names = "default";
++
++	clock-frequency = <400000>;
++	status = "okay";
++
++	versa3: versa3@68 {
++		compatible = "renesas,5p35023";
++		reg = <0x68>;
++		#clock-cells = <1>;
++		clocks = <&x1_clk>;
++		clock-names = "x1";
++		assigned-clocks = <&versa3 0>,
++				   <&versa3 1>,
++				   <&versa3 2>,
++				   <&versa3 3>,
++				   <&versa3 4>,
++				   <&versa3 5>;
++		assigned-clock-rates =	<12288000>, <25000000>,
++					<12000000>, <11289600>,
++					<11289600>, <24000000>;
++		clock-divider-read-only = <1>, <1>, <1>, <1>, <1>;
++		clock-flags = <2176>, <2176>, <2176>, <2052>, <2176>, <2048>;
++	};
++};
++
++&mtu3 {
++	status = "okay";
++};
++
++&ostm1 {
++	status = "okay";
++};
++
++&ostm2 {
++	status = "okay";
++};
++
++&pinctrl {
++	adc_pins: adc {
++		groups = "adc_c";
++		function = "adc";
++	};
++
++	eth0_pins: eth0 {
++		groups = "eth0_link", "eth0_mdio", "eth0_mii";
++		function = "eth0";
++	};
++
++	eth1_pins: eth1 {
++		groups = "eth1_link", "eth1_mdio", "eth1_mii";
++		function = "eth1";
++	};
++
++	i2c3_pins: i2c3 {
++		groups = "i2c3_b";
++		function = "i2c3";
++	};
++
++	scif0_pins: scif0 {
++		groups = "scif0_data";
++		function = "scif0";
++	};
++
++	sd0_pwr_en {
++		gpio-hog;
++		gpios = <RZG2L_GPIO(4, 1) GPIO_ACTIVE_HIGH>;
++		output-high;
++		line-name = "sd0_pwr_en";
++	};
++
++	sd0_dev_sel {
++		gpio-hog;
++		gpios = <RZG2L_GPIO(41, 1) GPIO_ACTIVE_HIGH>;
++		output-high;
++		line-name = "sd0_dev_sel";
++	};
++
++	sdhi0_pins: sd0 {
++		sd0_data {
++			pins = "SD0_DATA0", "SD0_DATA1", "SD0_DATA2", "SD0_DATA3";
++			power-source  = <3300>;
++		};
++
++		sd0_ctrl {
++			pins = "SD0_CLK", "SD0_CMD";
++			power-source  = <3300>;
++		};
++
++		sd0_mux {
++			groups = "sdhi0_cd_b";
++			function = "sdhi0";
++		};
++	};
++
++	sdhi0_pins_uhs: sd0_uhs {
++		sd1_data_uhs {
++			pins = "SD0_DATA0", "SD0_DATA1", "SD0_DATA2", "SD0_DATA3";
++			power-source  = <1800>;
++		};
++
++		sd0_ctrl_uhs {
++			pins = "SD0_CLK", "SD0_CMD";
++			power-source  = <1800>;
++		};
++
++		sd0_mux_uhs {
++			groups = "sdhi0_cd_b";
++			function = "sdhi0";
++		};
++	};
++};
++
++&scif0 {
++	pinctrl-0 = <&scif0_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++&sdhi0 {
++	pinctrl-0 = <&sdhi0_pins>;
++	pinctrl-1 = <&sdhi0_pins_uhs>;
++	pinctrl-names = "default", "state_uhs";
++
++	vmmc-supply = <&reg_3p3v>;
++	vqmmc-supply = <&vccq_sdhi0>;
++
++	bus-width = <4>;
++	sd-uhs-sdr50;
++	sd-uhs-sdr104;
++	status = "okay";
++};
++
++&xinclk {
++	clock-frequency = <24000000>;
++};
++
++&wdt0 {
++	status = "okay";
++	timeout-sec = <60>;
++};
++
++&wdt1 {
++	status = "okay";
++	timeout-sec = <60>;
++};
++
++&wdt2 {
++	status = "okay";
++	timeout-sec = <60>;
++};
+-- 
+2.25.1
+

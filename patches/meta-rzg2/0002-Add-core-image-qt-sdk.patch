@@ -1,0 +1,26 @@
+From 05c91fbadfd3a21b1ba0ccbdc8931617c798466c Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 7 Oct 2021 11:12:01 +0100
+Subject: [PATCH] Add core-image-qt-sdk
+
+Cross-compiling Qt based applications requires Qt tools
+to be fitted in the SDK. This commit adds an image that
+populates those tools in the SDK.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ dynamic-layers/qt5-layer/images/core-image-qt-sdk.bb | 2 ++
+ 1 file changed, 2 insertions(+)
+ create mode 100644 dynamic-layers/qt5-layer/images/core-image-qt-sdk.bb
+
+diff --git a/dynamic-layers/qt5-layer/images/core-image-qt-sdk.bb b/dynamic-layers/qt5-layer/images/core-image-qt-sdk.bb
+new file mode 100644
+index 00000000..2a07717f
+--- /dev/null
++++ b/dynamic-layers/qt5-layer/images/core-image-qt-sdk.bb
+@@ -0,0 +1,2 @@
++include core-image-qt.bb
++inherit populate_sdk_qt5
+-- 
+2.25.1
+

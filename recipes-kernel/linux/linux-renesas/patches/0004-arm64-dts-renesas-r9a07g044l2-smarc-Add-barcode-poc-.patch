@@ -1,0 +1,157 @@
+From ba22c4085880bf77f5b05a5076e10ab7101e94e6 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Tue, 7 Sep 2021 22:11:45 +0100
+Subject: [PATCH] arm64: dts: renesas: r9a07g044l2-smarc: Add barcode-poc
+ specific additions
+
+Add dtsi for the barcode-poc specific additions
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../renesas/r9a07g044l2-smarc-barcode.dtsi    | 121 ++++++++++++++++++
+ .../boot/dts/renesas/r9a07g044l2-smarc.dts    |   1 +
+ 2 files changed, 122 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-barcode.dtsi
+
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-barcode.dtsi b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-barcode.dtsi
+new file mode 100644
+index 000000000000..a6c2b85d8e9e
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc-barcode.dtsi
+@@ -0,0 +1,121 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the barcode-poc specific additions
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++/ {
++
++	clk_ext_camera: clk_ext_camera {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <24000000>;
++	};
++
++	ov5645_vddd_1v5: 1p5v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vddd";
++		regulator-min-microvolt = <1500000>;
++		regulator-max-microvolt = <1500000>;
++		regulator-always-on;
++	};
++
++	ov5645_vdddo_1v8: 1p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vdddo";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
++	};
++
++	ov5645_vdda_2v8: 2p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vdda";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		regulator-always-on;
++	};
++};
++
++&cru {
++	status = "okay";
++};
++
++&csi2 {
++	status = "okay";
++
++	ports {
++		port {
++			csi2_in: endpoint {
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
++				remote-endpoint = <&ov5645_to_csi>;
++			};
++		};
++	};
++};
++
++&gpt3 {
++	pinctrl-0 = <&gpt3_pins>;
++	pinctrl-names = "default";
++	channel = "channel_A";
++	status = "okay";
++};
++
++&gpt5 {
++	status = "disabled";
++};
++
++&i2c0 {
++	pinctrl-0 = <&i2c0_pins>;
++	pinctrl-names = "default";
++
++	status = "okay";
++
++	ov5645: camera@3c {
++		compatible = "ovti,ov5645";
++		reg = <0x3c>;
++		clock-names = "xclk";
++		clocks = <&clk_ext_camera>;
++		clock-frequency = <24000000>;
++		vdddo-supply = <&ov5645_vdddo_1v8>;
++		vdda-supply = <&ov5645_vdda_2v8>;
++		vddd-supply = <&ov5645_vddd_1v5>;
++		enable-gpios = <&pinctrl RZG2L_GPIO(2, 0) GPIO_ACTIVE_HIGH>;
++		reset-gpios = <&pinctrl RZG2L_GPIO(40, 2) GPIO_ACTIVE_LOW>;
++
++		port {
++			ov5645_to_csi: endpoint {
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
++				remote-endpoint = <&csi2_in>;
++			};
++		};
++	};
++};
++
++&i2c3 {
++	proximity_sensor: proximity@60 {
++		compatible = "vishay,vcnl4035";
++		reg = <0x60>;
++		status = "okay";
++
++		interrupt-parent = <&pinctrl>;
++		interrupts = <RZG2L_GPIO(3, 1) IRQ_TYPE_EDGE_FALLING>;
++
++		ired-led = <1>;
++	};
++};
++
++&pinctrl {
++	gpt3_pins: gpt3 {
++		groups = "gpt3_a_d";
++		function = "gpt3";
++	};
++
++	i2c0_pins: i2c0 {
++		pins = "RIIC0_SDA", "RIIC0_SCL";
++		input-enable;
++	};
++};
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc.dts b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc.dts
+index b586e2be8688..70d53cb39b61 100644
+--- a/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc.dts
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-smarc.dts
+@@ -8,6 +8,7 @@
+ /dts-v1/;
+ #include "r9a07g044l2.dtsi"
+ #include "rzg2l-smarc.dtsi"
++#include "r9a07g044l2-smarc-barcode.dtsi"
+ 
+ / {
+ 	model = "Evaluation board based on r9a07g044l2";
+-- 
+2.25.1
+

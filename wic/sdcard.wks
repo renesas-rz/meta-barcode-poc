@@ -1,0 +1,6 @@
+# short-description: Barcode PoC SD card image
+# long-description: SD card image for the Barcode PoC. The first partition
+# contains the rootfs, the second partition contains data.
+
+part /     --fstype=ext4 --label root --ondisk mmcblk0 --fixed-size 1024 --source rootfs
+part /data --fstype=vfat --label data --ondisk mmcblk0 --size       12000 --fsoptions "defaults,noauto"

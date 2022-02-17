@@ -1,0 +1,8 @@
+[Unit]
+Description=Startup script for the Barcode PoC
+
+[Service]
+ExecStart=/usr/bin/barcode-poc -c /usr/share/barcode-poc/conf/barcode-poc.ini
+
+[Install]
+WantedBy=multi-user.target
