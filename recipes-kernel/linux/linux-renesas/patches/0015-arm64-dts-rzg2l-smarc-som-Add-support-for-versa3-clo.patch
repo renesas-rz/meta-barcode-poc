@@ -1,0 +1,76 @@
+From 1d3a608b0b9918148f8b4259f2060e82ef926327 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 16 Jun 2022 16:35:13 +0100
+Subject: [PATCH] arm64: dts: rzg2l-smarc-som: Add support for versa3 clock
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../boot/dts/renesas/rzg2l-smarc-som.dtsi     | 38 +++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+index 7a138ba74265..29fc1e4db2e3 100644
+--- a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
++++ b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+@@ -107,6 +107,12 @@ vccq_sdhi0: regulator-vccq-sdhi0 {
+ 		gpios = <&pinctrl RZG2L_GPIO(39, 0) GPIO_ACTIVE_HIGH>;
+ 		regulator-always-on;
+ 	};
++
++	x1_clk: x1-clock {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <24000000>;
++	};
+ };
+ 
+ &adc {
+@@ -184,6 +190,33 @@ &gpu {
+ 	mali-supply = <&reg_1p1v>;
+ };
+ 
++&i2c3 {
++	pinctrl-0 = <&i2c3_pins>;
++	pinctrl-names = "default";
++
++	clock-frequency = <400000>;
++	status = "okay";
++
++	versa3: versa3@68 {
++		compatible = "renesas,5p35023";
++		reg = <0x68>;
++		#clock-cells = <1>;
++		clocks = <&x1_clk>;
++		clock-names = "x1";
++		assigned-clocks = <&versa3 0>,
++				   <&versa3 1>,
++				   <&versa3 2>,
++				   <&versa3 3>,
++				   <&versa3 4>,
++				   <&versa3 5>;
++		assigned-clock-rates =	<12288000>, <25000000>,
++					<12000000>, <11289600>,
++					<11289600>, <24000000>;
++		clock-divider-read-only = <1>, <1>, <1>, <1>, <1>;
++		clock-flags = <2176>, <2176>, <2176>, <2052>, <2176>, <2048>;
++	};
++};
++
+ &ostm1 {
+ 	status = "okay";
+ };
+@@ -240,6 +273,11 @@ gpio-sd0-pwr-en-hog {
+ 		line-name = "gpio_sd0_pwr_en";
+ 	};
+ 
++	i2c3_pins: i2c3 {
++		pinmux = <RZG2L_PORT_PINMUX(18, 0, 1)>, /* SDA */
++			 <RZG2L_PORT_PINMUX(18, 1, 1)>; /* SCL */
++	};
++
+ 	qspi0_pins: qspi0 {
+ 		qspi0-data {
+ 			pins = "QSPI0_IO0", "QSPI0_IO1", "QSPI0_IO2", "QSPI0_IO3";
+-- 
+2.34.1
+

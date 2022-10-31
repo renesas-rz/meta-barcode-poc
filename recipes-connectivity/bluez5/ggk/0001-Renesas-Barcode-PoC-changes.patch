@@ -1,0 +1,452 @@
+From 35c8032a09bea28051f2a6e5d9b9ac62d670c7de Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Tue, 6 Sep 2022 15:37:59 +0100
+Subject: [PATCH] Renesas Barcode-PoC changes
+
+This work can be used as a library, however, the characteristics
+exported by the server and the APIs to read them back are defined
+in the core files of the library, therefore we actually need to
+modify the code that goes into the library to have it do what
+we need it to do.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .gitignore          |  10 ++
+ README.md           |   5 +
+ src/GattInterface.h |  12 ++-
+ src/Server.cpp      | 231 +++-----------------------------------------
+ src/standalone.cpp  |  42 ++------
+ 5 files changed, 44 insertions(+), 256 deletions(-)
+ create mode 100644 .gitignore
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..15e1ccd
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,10 @@
++*.o
++*.swp
++Makefile
++config.h
++config.log
++config.status
++libggk.a
++standalone
++stamp-h1
++*.sh
+diff --git a/README.md b/README.md
+index dfad381..52b2852 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,8 @@
++# Renesas Barcode-PoC version
++
++This is a fork of https://github.com/nettlep/gobbledegook.git, specifically
++designed for the Barcode Proof of Concept by Renesas.
++
+ # Seeking a new maintainer
+ 
+ I'm a firm believer that a maintainer should be, at least in some part, a consumer of the thing they're maintaining. I built GGK for a personal project. That project's communication needs have grown considerably, beyond the point where Bluetooth LE is a viable option and I was forced to make the switch to an IP-based solution. As much as I've enjoyed building and using GGK, I no longer have a use-case for Bluetooh LE or a test-case for GGK.
+diff --git a/src/GattInterface.h b/src/GattInterface.h
+index 0f21c8a..83772d1 100644
+--- a/src/GattInterface.h
++++ b/src/GattInterface.h
+@@ -146,6 +146,16 @@ struct GattInterface : DBusInterface
+ 		return nullptr == pData ? defaultValue : *static_cast<const T *>(pData);
+ 	}
+ 
++	std::string
++	getStringValue(const char *pName, std::string defaultValue) const
++	{
++		std::string *text = (std::string *)TheServer->getDataGetter()(pName);
++		std::string copy(text->c_str());
++		delete text;
++
++		return copy.empty() ? defaultValue : copy;
++	}
++
+ 	// Return a data pointer from the server's registered data getter (GGKServerDataGetter)
+ 	//
+ 	// This method is for use with pointer types. For non-pointer types, use `getDataValue()` instead.
+@@ -222,4 +232,4 @@ protected:
+ 	std::list<GattProperty> properties;
+ };
+ 
+-}; // namespace ggk
+\ No newline at end of file
++}; // namespace ggk
+diff --git a/src/Server.cpp b/src/Server.cpp
+index aa2f5cd..326e0d2 100644
+--- a/src/Server.cpp
++++ b/src/Server.cpp
+@@ -261,7 +261,7 @@ Server::Server(const std::string &serviceName, const std::string &advertisingNam
+ 			// Standard characteristic "ReadValue" method call
+ 			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+ 			{
+-				self.methodReturnValue(pInvocation, "Acme Inc.", true);
++				self.methodReturnValue(pInvocation, "Renesas Electronics Corporation", true);
+ 			})
+ 
+ 		.gattCharacteristicEnd()
+@@ -274,133 +274,24 @@ Server::Server(const std::string &serviceName, const std::string &advertisingNam
+ 			// Standard characteristic "ReadValue" method call
+ 			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+ 			{
+-				self.methodReturnValue(pInvocation, "Marvin-PA", true);
++				self.methodReturnValue(pInvocation, "Barcode-PoC", true);
+ 			})
+ 
+ 		.gattCharacteristicEnd()
+ 
+ 	.gattServiceEnd()
+ 
+-	// Battery Service (0x180F)
+-	//
+-	// This is a fake battery service that conforms to org.bluetooth.service.battery_service. For details, see:
+-	//
+-	//     https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.service.battery_service.xml
+-	//
+-	// We also handle updates to the battery level from inside the server (see onUpdatedValue). There is an external method
+-	// (see main.cpp) that updates our battery level and posts an update using ggkPushUpdateQueue. Those updates are used
+-	// to notify us that our value has changed, which translates into a call to `onUpdatedValue` from the idleFunc (see
+-	// Init.cpp).
+-	.gattServiceBegin("battery", "180F")
+-
+-		// Characteristic: Battery Level (0x2A19)
+-		//
+-		// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.battery_level.xml
+-		.gattCharacteristicBegin("level", "2A19", {"read", "notify"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				uint8_t batteryLevel = self.getDataValue<uint8_t>("battery/level", 0);
+-				self.methodReturnValue(pInvocation, batteryLevel, true);
+-			})
+-
+-			// Handle updates to the battery level
+-			//
+-			// Here we use the onUpdatedValue to set a callback that isn't exposed to BlueZ, but rather allows us to manage
+-			// updates to our value. These updates may have come from our own server or some other source.
+-			//
+-			// We can handle updates in any way we wish, but the most common use is to send a change notification.
+-			.onUpdatedValue(CHARACTERISTIC_UPDATED_VALUE_CALLBACK_LAMBDA
+-			{
+-				uint8_t batteryLevel = self.getDataValue<uint8_t>("battery/level", 0);
+-				self.sendChangeNotificationValue(pConnection, batteryLevel);
+-				return true;
+-			})
+-
+-		.gattCharacteristicEnd()
+-	.gattServiceEnd()
+-
+-	// Current Time Service (0x1805)
+-	//
+-	// This is a time service that conforms to org.bluetooth.service.current_time. For details, see:
+-	//
+-	//    https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.service.current_time.xml
+-	//
+-	// Like the battery service, this also makes use of events. This one updates the time every tick.
+-	//
+-	// This showcases the use of events (see the call to .onEvent() below) for periodic actions. In this case, the action
+-	// taken is to update time every tick. This probably isn't a good idea for a production service, but it has been quite
+-	// useful for testing to ensure we're connected and updating.
+-	.gattServiceBegin("time", "1805")
+-
+-		// Characteristic: Current Time (0x2A2B)
+-		//
+-		// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.current_time.xml
+-		.gattCharacteristicBegin("current", "2A2B", {"read", "notify"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				self.methodReturnVariant(pInvocation, ServerUtils::gvariantCurrentTime(), true);
+-			})
+-
+-			// Update the time every tick of the periodic timer
+-			//
+-			// We'll send an change notification to any subscribed clients with the latest value
+-			.onEvent(1, nullptr, CHARACTERISTIC_EVENT_CALLBACK_LAMBDA
+-			{
+-				self.sendChangeNotificationVariant(pConnection, ServerUtils::gvariantCurrentTime());
+-			})
+-
+-		.gattCharacteristicEnd()
+-
+-		// Characteristic: Local Time Information (0x2A0F)
+-		//
+-		// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.local_time_information.xml
+-		.gattCharacteristicBegin("local", "2A0F", {"read"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				self.methodReturnVariant(pInvocation, ServerUtils::gvariantLocalTime(), true);
+-			})
+-
+-		.gattCharacteristicEnd()
+-	.gattServiceEnd()
+-
+ 	// Custom read/write text string service (00000001-1E3C-FAD4-74E2-97A033F1BFAA)
+-	//
+-	// This service will return a text string value (default: 'Hello, world!'). If the text value is updated, it will notify
+-	// that the value has been updated and provide the new text from that point forward.
+-	.gattServiceBegin("text", "00000001-1E3C-FAD4-74E2-97A033F1BFAA")
++	.gattServiceBegin("reader", "00000001-1E3C-FAD4-74E2-97A033F1BFAA")
+ 
+ 		// Characteristic: String value (custom: 00000002-1E3C-FAD4-74E2-97A033F1BFAA)
+-		.gattCharacteristicBegin("string", "00000002-1E3C-FAD4-74E2-97A033F1BFAA", {"read", "write", "notify"})
++		.gattCharacteristicBegin("barcode", "00000002-1E3C-FAD4-74E2-97A033F1BFAA", {"read", "notify"})
+ 
+ 			// Standard characteristic "ReadValue" method call
+ 			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+ 			{
+-				const char *pTextString = self.getDataPointer<const char *>("text/string", "");
+-				self.methodReturnValue(pInvocation, pTextString, true);
+-			})
+-
+-			// Standard characteristic "WriteValue" method call
+-			.onWriteValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				// Update the text string value
+-				GVariant *pAyBuffer = g_variant_get_child_value(pParameters, 0);
+-				self.setDataPointer("text/string", Utils::stringFromGVariantByteArray(pAyBuffer).c_str());
+-
+-				// Since all of these methods (onReadValue, onWriteValue, onUpdateValue) are all part of the same
+-				// Characteristic interface (which just so happens to be the same interface passed into our self
+-				// parameter) we can that parameter to call our own onUpdatedValue method
+-				self.callOnUpdatedValue(pConnection, pUserData);
+-
+-				// Note: Even though the WriteValue method returns void, it's important to return like this, so that a
+-				// dbus "method_return" is sent, otherwise the client gets an error (ATT error code 0x0e"unlikely").
+-				// Only "write-without-response" works without this
+-				self.methodReturnVariant(pInvocation, NULL);
++				std::string barcode = self.getStringValue("reader/barcode", "");
++				self.methodReturnValue(pInvocation, barcode.c_str(), true);
+ 			})
+ 
+ 			// Here we use the onUpdatedValue to set a callback that isn't exposed to BlueZ, but rather allows us to manage
+@@ -409,59 +300,21 @@ Server::Server(const std::string &serviceName, const std::string &advertisingNam
+ 			// We can handle updates in any way we wish, but the most common use is to send a change notification.
+ 			.onUpdatedValue(CHARACTERISTIC_UPDATED_VALUE_CALLBACK_LAMBDA
+ 			{
+-				const char *pTextString = self.getDataPointer<const char *>("text/string", "");
+-				self.sendChangeNotificationValue(pConnection, pTextString);
+-				return true;
+-			})
++				std::string barcode = self.getStringValue("reader/barcode", "");
++				self.sendChangeNotificationValue(pConnection, barcode.c_str());
+ 
+-			// GATT Descriptor: Characteristic User Description (0x2901)
+-			// 
+-			// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.characteristic_user_description.xml
+-			.gattDescriptorBegin("description", "2901", {"read"})
+-
+-				// Standard descriptor "ReadValue" method call
+-				.onReadValue(DESCRIPTOR_METHOD_CALLBACK_LAMBDA
+-				{
+-					const char *pDescription = "A mutable text string used for testing. Read and write to me, it tickles!";
+-					self.methodReturnValue(pInvocation, pDescription, true);
+-				})
+-
+-			.gattDescriptorEnd()
+-
+-		.gattCharacteristicEnd()
+-	.gattServiceEnd()
+-
+-	// Custom ASCII time string service
+-	//
+-	// This service will simply return the result of asctime() of the current local time. It's a nice test service to provide
+-	// a new value each time it is read.
+-
+-	// Service: ASCII Time (custom: 00000001-1E3D-FAD4-74E2-97A033F1BFEE)
+-	.gattServiceBegin("ascii_time", "00000001-1E3D-FAD4-74E2-97A033F1BFEE")
+-
+-		// Characteristic: ASCII Time String (custom: 00000002-1E3D-FAD4-74E2-97A033F1BFEE)
+-		.gattCharacteristicBegin("string", "00000002-1E3D-FAD4-74E2-97A033F1BFEE", {"read"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				// Get our local time string using asctime()
+-				time_t timeVal = time(nullptr);
+-				struct tm *pTimeStruct = localtime(&timeVal);
+-				std::string timeString = Utils::trim(asctime(pTimeStruct));
+-
+-				self.methodReturnValue(pInvocation, timeString, true);
++				return true;
+ 			})
+ 
+ 			// GATT Descriptor: Characteristic User Description (0x2901)
+-			// 
++			//
+ 			// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.characteristic_user_description.xml
+ 			.gattDescriptorBegin("description", "2901", {"read"})
+ 
+ 				// Standard descriptor "ReadValue" method call
+ 				.onReadValue(DESCRIPTOR_METHOD_CALLBACK_LAMBDA
+ 				{
+-					const char *pDescription = "Returns the local time (as reported by POSIX asctime()) each time it is read";
++					const char *pDescription = "A string for the decoded barcode";
+ 					self.methodReturnValue(pInvocation, pDescription, true);
+ 				})
+ 
+@@ -470,67 +323,7 @@ Server::Server(const std::string &serviceName, const std::string &advertisingNam
+ 		.gattCharacteristicEnd()
+ 	.gattServiceEnd()
+ 
+-	// Custom CPU information service (custom: 0000B001-1E3D-FAD4-74E2-97A033F1BFEE)
+-	//
+-	// This is a cheezy little service that reads the CPU info from /proc/cpuinfo and returns the count and model of the
+-	// CPU. It may not work on all platforms, but it does provide yet another example of how to do things.
+-
+-	// Service: CPU Information (custom: 0000B001-1E3D-FAD4-74E2-97A033F1BFEE)
+-	.gattServiceBegin("cpu", "0000B001-1E3D-FAD4-74E2-97A033F1BFEE")
+-
+-		// Characteristic: CPU Count (custom: 0000B002-1E3D-FAD4-74E2-97A033F1BFEE)
+-		.gattCharacteristicBegin("count", "0000B002-1E3D-FAD4-74E2-97A033F1BFEE", {"read"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				int16_t cpuCount = 0;
+-				ServerUtils::getCpuInfo(cpuCount);
+-				self.methodReturnValue(pInvocation, cpuCount, true);
+-			})
+-
+-			// GATT Descriptor: Characteristic User Description (0x2901)
+-			// 
+-			// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.characteristic_user_description.xml
+-			.gattDescriptorBegin("description", "2901", {"read"})
+-
+-				// Standard descriptor "ReadValue" method call
+-				.onReadValue(DESCRIPTOR_METHOD_CALLBACK_LAMBDA
+-				{
+-					const char *pDescription = "This might represent the number of CPUs in the system";
+-					self.methodReturnValue(pInvocation, pDescription, true);
+-				})
+-
+-			.gattDescriptorEnd()
+-
+-		.gattCharacteristicEnd()
+-
+-		// Characteristic: CPU Model (custom: 0000B003-1E3D-FAD4-74E2-97A033F1BFEE)
+-		.gattCharacteristicBegin("model", "0000B003-1E3D-FAD4-74E2-97A033F1BFEE", {"read"})
+-
+-			// Standard characteristic "ReadValue" method call
+-			.onReadValue(CHARACTERISTIC_METHOD_CALLBACK_LAMBDA
+-			{
+-				int16_t cpuCount = 0;
+-				self.methodReturnValue(pInvocation, ServerUtils::getCpuInfo(cpuCount), true);
+-			})
+-
+-			// GATT Descriptor: Characteristic User Description (0x2901)
+-			// 
+-			// See: https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.characteristic_user_description.xml
+-			.gattDescriptorBegin("description", "2901", {"read"})
+-
+-				// Standard descriptor "ReadValue" method call
+-				.onReadValue(DESCRIPTOR_METHOD_CALLBACK_LAMBDA
+-				{
+-					const char *pDescription = "Possibly the model of the CPU in the system";
+-					self.methodReturnValue(pInvocation, pDescription, true);
+-				})
+-
+-			.gattDescriptorEnd()
+-
+-		.gattCharacteristicEnd()
+-	.gattServiceEnd(); // << -- NOTE THE SEMICOLON
++	; // << -- NOTE THE SEMICOLON
+ 
+ 	//  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+ 	//                                                ____ _____ ___  _____
+diff --git a/src/standalone.cpp b/src/standalone.cpp
+index 7a5c141..f497a5d 100644
+--- a/src/standalone.cpp
++++ b/src/standalone.cpp
+@@ -110,11 +110,8 @@ static const int kMaxAsyncInitTimeoutMS = 30 * 1000;
+ // Server data values
+ //
+ 
+-// The battery level ("battery/level") reported by the server (see Server.cpp)
+-static uint8_t serverDataBatteryLevel = 78;
+-
+ // The text string ("text/string") used by our custom text string service (see Server.cpp)
+-static std::string serverDataTextString = "Hello, world!";
++static std::string serverDataTextString = "Decoded Barcode";
+ 
+ //
+ // Logging
+@@ -183,13 +180,9 @@ const void *dataGetter(const char *pName)
+ 
+ 	std::string strName = pName;
+ 
+-	if (strName == "battery/level")
+-	{
+-		return &serverDataBatteryLevel;
+-	}
+-	else if (strName == "text/string")
++	if (strName == "reader/barcode")
+ 	{
+-		return serverDataTextString.c_str();
++		return new std::string(serverDataTextString);
+ 	}
+ 
+ 	LogWarn((std::string("Unknown name for server data getter request: '") + pName + "'").c_str());
+@@ -217,19 +210,6 @@ int dataSetter(const char *pName, const void *pData)
+ 
+ 	std::string strName = pName;
+ 
+-	if (strName == "battery/level")
+-	{
+-		serverDataBatteryLevel = *static_cast<const uint8_t *>(pData);
+-		LogDebug((std::string("Server data: battery level set to ") + std::to_string(serverDataBatteryLevel)).c_str());
+-		return 1;
+-	}
+-	else if (strName == "text/string")
+-	{
+-		serverDataTextString = static_cast<const char *>(pData);
+-		LogDebug((std::string("Server data: text string set to '") + serverDataTextString + "'").c_str());
+-		return 1;
+-	}
+-
+ 	LogWarn((std::string("Unknown name for server data setter request: '") + pName + "'").c_str());
+ 
+ 	return 0;
+@@ -289,22 +269,12 @@ int main(int argc, char **ppArgv)
+ 	//     This first parameter (the service name) must match tha name configured in the D-Bus permissions. See the Readme.md file
+ 	//     for more information.
+ 	//
+-	if (!ggkStart("gobbledegook", "Gobbledegook", "Gobbledegook", dataGetter, dataSetter, kMaxAsyncInitTimeoutMS))
++	if (!ggkStart("barcodepoc", "BarcodePoC", "BarcodePoC",
++		      dataGetter, dataSetter, kMaxAsyncInitTimeoutMS))
+ 	{
+ 		return -1;
+ 	}
+ 
+-	// Wait for the server to start the shutdown process
+-	//
+-	// While we wait, every 15 ticks, drop the battery level by one percent until we reach 0
+-	while (ggkGetServerRunState() < EStopping)
+-	{
+-		std::this_thread::sleep_for(std::chrono::seconds(15));
+-
+-		serverDataBatteryLevel = std::max(serverDataBatteryLevel - 1, 0);
+-		ggkNofifyUpdatedCharacteristic("/com/gobbledegook/battery/level");
+-	}
+-
+ 	// Wait for the server to come to a complete stop (CTRL-C from the command line)
+ 	if (!ggkWait())
+ 	{
+@@ -312,5 +282,5 @@ int main(int argc, char **ppArgv)
+ 	}
+ 
+ 	// Return the final server health status as a success (0) or error (-1)
+-  	return ggkGetServerHealth() == EOk ? 0 : 1;
++	return ggkGetServerHealth() == EOk ? 0 : 1;
+ }
+-- 
+2.34.1
+

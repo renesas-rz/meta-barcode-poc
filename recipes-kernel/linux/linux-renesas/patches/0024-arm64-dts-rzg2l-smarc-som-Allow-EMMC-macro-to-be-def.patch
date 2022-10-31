@@ -1,0 +1,29 @@
+From c7774a6f147a8b12312475ab6767db609a9ab491 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 20 Jun 2022 17:47:12 +0100
+Subject: [PATCH] arm64: dts: rzg2l-smarc-som: Allow EMMC macro to be defined
+ elsewhere
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+index acc016367132..e1411e6182c3 100644
+--- a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
++++ b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+@@ -9,7 +9,9 @@
+ #include <dt-bindings/pinctrl/rzg2l-pinctrl.h>
+ 
+ /* SW1[2] should be at position 2/OFF to enable 64 GB eMMC */
+-#define EMMC	1
++#ifndef EMMC
++# define EMMC	1
++#endif
+ 
+ /*
+  * To enable uSD card on CN3,
+-- 
+2.34.1
+

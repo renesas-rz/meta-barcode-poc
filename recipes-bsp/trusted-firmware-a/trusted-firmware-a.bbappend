@@ -1,4 +1,4 @@
-COMPATIBLE_MACHINE = "(smarc-rzg2l|rzg2l-dev|smarc-rzg2lc|rzg2lc-dev|barcode-poc-g2l)"
+COMPATIBLE_MACHINE_rzg2l = "(smarc-rzg2l|smarc-rzg2lc|smarc-rzg2ul|barcode-poc-g2l)"
 
 PLATFORM_barcode-poc-g2l = "g2l"
 EXTRA_FLAGS_barcode-poc-g2l = "BOARD=smarc_2"

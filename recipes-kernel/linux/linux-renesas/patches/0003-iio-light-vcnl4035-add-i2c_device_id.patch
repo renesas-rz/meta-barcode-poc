@@ -1,0 +1,46 @@
+From ab9e5ffe56ad3a3b22ed1d4e353da93b87c8cd7f Mon Sep 17 00:00:00 2001
+From: Vaishnav M A <vaishnav@beagleboard.org>
+Date: Mon, 19 Oct 2020 01:23:57 +0530
+Subject: [PATCH] iio: light: vcnl4035 add i2c_device_id
+
+Add i2c_device_id table for the vcnl4035 driver,
+enabling device instantiation using i2c_new_client_device()
+or from userspace in cases where device-tree based description
+is not possible now, like device(s) on a gbphy i2c adapter
+created by greybus.
+
+Signed-off-by: Vaishnav M A <vaishnav@beagleboard.org>
+Link: https://lore.kernel.org/r/20201018195357.GA814864@ubuntu
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+---
+ drivers/iio/light/vcnl4035.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/iio/light/vcnl4035.c b/drivers/iio/light/vcnl4035.c
+index 1bd85e21fd11..1342bbe111ed 100644
+--- a/drivers/iio/light/vcnl4035.c
++++ b/drivers/iio/light/vcnl4035.c
+@@ -653,6 +653,12 @@ static const struct dev_pm_ops vcnl4035_pm_ops = {
+ 			   vcnl4035_runtime_resume, NULL)
+ };
+ 
++static const struct i2c_device_id vcnl4035_id[] = {
++	{ "vcnl4035", 0},
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, vcnl4035_id);
++
+ static const struct of_device_id vcnl4035_of_match[] = {
+ 	{ .compatible = "vishay,vcnl4035", },
+ 	{ }
+@@ -667,6 +673,7 @@ static struct i2c_driver vcnl4035_driver = {
+ 	},
+ 	.probe  = vcnl4035_probe,
+ 	.remove	= vcnl4035_remove,
++	.id_table = vcnl4035_id,
+ };
+ 
+ module_i2c_driver(vcnl4035_driver);
+-- 
+2.34.1
+

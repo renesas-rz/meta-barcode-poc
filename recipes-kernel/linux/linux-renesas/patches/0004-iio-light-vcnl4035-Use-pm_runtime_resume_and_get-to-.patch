@@ -1,0 +1,38 @@
+From 2d70de3613ed0e46edd11d4f6bea352fc33dc6ad Mon Sep 17 00:00:00 2001
+From: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Date: Sun, 9 May 2021 12:33:48 +0100
+Subject: [PATCH] iio: light: vcnl4035: Use pm_runtime_resume_and_get() to
+ replace open coding.
+
+Found using coccicheck script under review at:
+https://lore.kernel.org/lkml/20210427141946.2478411-1-Julia.Lawall@inria.fr/
+
+This is a prequel to taking a closer look at the runtime pm in IIO drivers
+in general.
+
+Signed-off-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Cc: Parthiban Nallathambi <pn@denx.de>
+Reviewed-by: Mauro Carvalho Chehab <mchehab+huawei@kernel.org>
+Link: https://lore.kernel.org/r/20210509113354.660190-23-jic23@kernel.org
+---
+ drivers/iio/light/vcnl4035.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/iio/light/vcnl4035.c b/drivers/iio/light/vcnl4035.c
+index 1342bbe111ed..8c291c2c9a30 100644
+--- a/drivers/iio/light/vcnl4035.c
++++ b/drivers/iio/light/vcnl4035.c
+@@ -145,9 +145,7 @@ static int vcnl4035_set_pm_runtime_state(struct vcnl4035_data *data, bool on)
+ 	struct device *dev = &data->client->dev;
+ 
+ 	if (on) {
+-		ret = pm_runtime_get_sync(dev);
+-		if (ret < 0)
+-			pm_runtime_put_noidle(dev);
++		ret = pm_runtime_resume_and_get(dev);
+ 	} else {
+ 		pm_runtime_mark_last_busy(dev);
+ 		ret = pm_runtime_put_autosuspend(dev);
+-- 
+2.34.1
+

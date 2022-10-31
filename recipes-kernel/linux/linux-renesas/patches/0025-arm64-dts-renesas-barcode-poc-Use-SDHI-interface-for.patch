@@ -1,0 +1,29 @@
+From 0961e0f0f78f36e2f968fc0326b2f4522a94a83c Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 20 Jun 2022 17:50:08 +0100
+Subject: [PATCH] arm64: dts: renesas: barcode-poc: Use SDHI interface for uSD
+ card
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+index dd448d388483..a562db813276 100644
+--- a/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+@@ -6,6 +6,10 @@
+  */
+ 
+ /dts-v1/;
++
++/* Use SD card instead of eMMC */
++#define EMMC		0
++
+ #include "r9a07g044l2.dtsi"
+ #include "rzg2l-smarc-som.dtsi"
+ #include "barcode-poc-carrier.dtsi"
+-- 
+2.34.1
+

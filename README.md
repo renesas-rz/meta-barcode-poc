@@ -6,36 +6,44 @@ Please see the corresponding sections below for details.
 Dependencies
 ============
 
-  URI: git://git.yoctoproject.org/poky  
-  Layers: meta, meta-poky, meta-yocto-bsp  
-  Branch: dunfell  
-  Revision: e32d854e33bc86c2a616df8708e021a098afcf73  
-  (Tag: dunfell-23.0.5)  
-  (Need to cherry-pick a commit: git cherry-pick 9e444)
+  URI: git://git.yoctoproject.org/poky \
+  Layers: meta, meta-poky, meta-yocto-bsp \
+  Tag: dunfell-23.0.14 \
+  (Need to cherry-pick commits: 9e44438a and cfd897e2)
 
-  URI: git://git.openembedded.org/meta-openembedded  
-  Layers: meta-oe, meta-python, meta-multimedia  
-  Branch: dunfell  
-  Revision: cc6fc6b1641ab23089c1e3bba11e0c6394f0867c
+  URI: git://git.openembedded.org/meta-openembedded \
+  Layers: meta-oe, meta-python, meta-multimedia \
+  Branch: dunfell \
+  Revision: ec978232732edbdd875ac367b5a9c04b881f2e19
 
-  URI: https://git.yoctoproject.org/meta-gplv2  
-  Layers: meta-gplv2  
-  Branch: dunfell  
+  URI: https://git.yoctoproject.org/meta-gplv2 \
+  Layers: meta-gplv2 \
+  Branch: dunfell \
   Revision: 60b251c25ba87e946a0ca4cdc8d17b1cb09292ac
 
-  URI: ssh://git@github.com/meta-qt5/meta-qt5  
-  Layers: meta-qt5  
+  URI: ssh://git@github.com/meta-qt5/meta-qt5 \
+  Layers: meta-qt5 \
   Revision: c1b0c9f546289b1592d7a895640de103723a0305
 
-  URI: https://github.com/renesas-rz/meta-rzg2.git  
-  Layers: meta-rzg2  
-  Tag: rzg2l\_bsp\_v1.3  
-  Fixes: Apply (git am) the patches found in patches/meta-rzg2 from this repo
+  URI: https://github.com/renesas-rz/meta-renesas.git \
+  Layers: meta-renesas \
+  Tag: BSP-3.0.0
 
-This meta-layer also depends on *meta-rz-features* for the RZ/G2L BSP v1.3.
+  URI: https://github.com/renesas-rz/meta-da14531.git \
+  Layers: meta-da14531 \
+  Branch: dunfell
+
+This meta-layer also depends on *meta-rz-features* for the RZ/G2L BSP v3.0.0.
 *meta-rz-features* can be downloaded from the Renesas website in two packages:
 * [Mali Graphic Library](https://www.renesas.com/us/en/products/microcontrollers-microprocessors/rz-arm-based-high-end-32-64-bit-mpus/rzg2l-mali-graphic-library-evaluation-version)
-* [Video Codec Library](https://www.renesas.com/us/en/products/microcontrollers-microprocessors/rz-arm-based-high-end-32-64-bit-mpus/rzg2l-video-codec-library-evaluation-version-v053)
+* [Video Codec Library](https://www.renesas.com/us/en/software-tool/rz-mpu-video-codec-library-evaluation-version-rzg2l-and-rzv2l#overview)
+
+Please, make sure you have access to the following repositories:
+* https://github.com/renesas-rz/meta-da14531.git
+* https://github.com/renesas-rz/barcode-poc.git
+
+If you don't have access to any of the above repositories please
+get in touch with your Renesas FAE or sales representative.
 
 BSP Support
 ===========
@@ -57,7 +65,7 @@ patches this meta-layer add a few more patches from
 **recipes-kernel/linux/linux-renesas/patches/**.
 
 The Linux kernel configuration used by this project is based on the defconfig
-file found in the **rz\_linux-cip.git** repository. On top of that, this repo
+file found in the **rz_linux-cip.git** repository. On top of that, this repo
 applies a configuration fragment (from file
 **recipes-kernel/linux/linux-renesas/barcode-poc.cfg**) to make the Kernel Image
 suitable for the Barcode PoC.
@@ -114,3 +122,14 @@ sudo bmaptool copy --nobmap barcode-demo-barcode-poc-g2l-20211125164543.rootfs.w
 ```
 
 *bmaptool* will take some time to complete.
+
+How to connect to a WiFi network
+================================
+
+The BSP includes a range of wireless network utilities to help manage network
+connectiviy using the [Embedded Artists 2AE WiFi/BT M.2 Module](
+https://www.embeddedartists.com/products/2ae-m-2-module/).
+
+Documentation on how to connect to a wireless network can be found in
+[docs/wifi-configuration.md](./docs/wifi-configuration.md).
+

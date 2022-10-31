@@ -1,0 +1,38 @@
+From 4d9abc5124054ec4c3f4f6360c02773d7f8bc7f5 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Fri, 3 Dec 2021 00:22:12 +0000
+Subject: [PATCH] arm64: dts: renesas: barcode-poc: Enable RTC battery charger
+
+It still not super clear what's going to be used as battery
+backup for the Barcode PoC (whether that's going to be a super
+cap, a rechargeable battery, or a non-rechargeable battery).
+
+Enable the RTC battery charger so that we have an example of
+usage. This patch should be reverted/taken out in case we
+end up using a non-rechargeable battery.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+index 8f66432f96a4..6136646a456d 100644
+--- a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
++++ b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+@@ -107,6 +107,12 @@ &phyrst {
+ 	status = "okay";
+ };
+ 
++&pmic {
++	charger-enable;
++	charger-current-level = <60>;
++	charger-termination-voltage = <3000>;
++};
++
+ &usb2_phy0 {
+ 	pinctrl-0 = <&usb0_pins>;
+ 	pinctrl-names = "default";
+-- 
+2.34.1
+

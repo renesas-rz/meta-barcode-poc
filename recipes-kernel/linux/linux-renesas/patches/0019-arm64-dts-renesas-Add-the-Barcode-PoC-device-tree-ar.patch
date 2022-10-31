@@ -1,0 +1,177 @@
+From 812e7e5bc7169ba9160a4134034d450cae908e89 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 11 Oct 2021 16:03:03 +0100
+Subject: [PATCH] arm64: dts: renesas: Add the Barcode PoC device tree
+ architecture
+
+The Barcode PoC is a design based on the SMARC SoM.
+The SoM sits on the Barcode PoC carrier board, a bespoke PCB.
+The first iteration of the design is based on the RZ/G2L SMARC
+SoM, other iterations might switch to other RZ/G based SMARC SoMs.
+This commit adds the below files:
+* barcode-poc-carrier.dtsi - to describe the Barcode PoC carrier board
+* r9a07g044l2-barcode-poc.dts - to describe the RZ/G2L Barcode PoC
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../boot/dts/renesas/barcode-poc-carrier.dtsi | 123 ++++++++++++++++++
+ .../dts/renesas/r9a07g044l2-barcode-poc.dts   |  17 +++
+ 2 files changed, 140 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+ create mode 100644 arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+
+diff --git a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+new file mode 100644
+index 000000000000..8f66432f96a4
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+@@ -0,0 +1,123 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the Barcode PoC carrier board
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++/ {
++	vbus0_usb2: regulator-vbus0-usb2 {
++		compatible = "regulator-fixed";
++
++		regulator-name = "USB20_VBUS0";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++	};
++};
++
++&ehci0 {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&ehci1 {
++	status = "okay";
++};
++
++&eth0 {
++	status = "okay";
++};
++
++&hsusb {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&i2c0 {
++	pinctrl-0 = <&i2c0_pins>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
++
++&i2c3 {
++	proximity_sensor: proximity@60 {
++		compatible = "vishay,vcnl4035";
++		reg = <0x60>;
++		status = "okay";
++
++		interrupt-parent = <&pinctrl>;
++		interrupts = <RZG2L_GPIO(2, 1) IRQ_TYPE_EDGE_FALLING>;
++
++		ired-led = <1>;
++	};
++};
++
++&gpt4 {
++	status = "disabled";
++};
++
++&gpt5 {
++	pinctrl-0 = <&gpt5_pins>;
++	pinctrl-names = "default";
++	channel="channel_A";
++	status = "okay";
++};
++
++&ohci0 {
++	dr_mode = "otg";
++	status = "okay";
++};
++
++&ohci1 {
++	status = "okay";
++};
++
++&pinctrl {
++	gpt4_pins: gpt4 {
++		pinmux = <RZG2L_PORT_PINMUX(43, 0, 2)>, /* Channel A */
++			 <RZG2L_PORT_PINMUX(43, 1, 2)>; /* Channel B */
++	};
++
++	gpt5_pins: gpt5 {
++		pinmux = <RZG2L_PORT_PINMUX(43, 2, 2)>;
++	};
++
++	i2c0_pins: i2c0 {
++		pins = "RIIC0_SDA", "RIIC0_SCL";
++		input-enable;
++	};
++
++	/* USB Channel 0 */
++	usb0_pins: usb0 {
++		pinmux = <RZG2L_PORT_PINMUX(4, 0, 1)>, /* VBUS */
++			 <RZG2L_PORT_PINMUX(5, 0, 1)>, /* OVC */
++			 <RZG2L_PORT_PINMUX(5, 1, 1)>, /* OTG_ID */
++			 <RZG2L_PORT_PINMUX(5, 2, 1)>;
++	};
++
++	/* USB Channel 1 */
++	usb1_pins: usb1 {
++		pinmux = <RZG2L_PORT_PINMUX(42, 0, 1)>, /* VBUS */
++			 <RZG2L_PORT_PINMUX(42, 1, 1)>; /* OVC */
++	};
++};
++
++&phyrst {
++	status = "okay";
++};
++
++&usb2_phy0 {
++	pinctrl-0 = <&usb0_pins>;
++	pinctrl-names = "default";
++
++	vbus-supply = <&vbus0_usb2>;
++	status = "okay";
++};
++
++&usb2_phy1 {
++	pinctrl-0 = <&usb1_pins>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+new file mode 100644
+index 000000000000..dd448d388483
+--- /dev/null
++++ b/arch/arm64/boot/dts/renesas/r9a07g044l2-barcode-poc.dts
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Device Tree Source for the RZG2L Dual A55 Barcode PoC
++ *
++ * Copyright (C) 2021 Renesas Electronics Corp.
++ */
++
++/dts-v1/;
++#include "r9a07g044l2.dtsi"
++#include "rzg2l-smarc-som.dtsi"
++#include "barcode-poc-carrier.dtsi"
++
++/ {
++	model = "Barcode PoC based on r9a07g044l2";
++	compatible = "renesas,r9a07g044l2-barcode-poc",
++		"renesas,r9a07g044l2-smarc", "renesas,r9a07g044l2";
++};
+-- 
+2.34.1
+

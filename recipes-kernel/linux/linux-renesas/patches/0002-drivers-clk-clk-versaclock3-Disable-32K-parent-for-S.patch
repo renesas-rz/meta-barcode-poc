@@ -1,0 +1,26 @@
+From ca34843c9c21f4e9bef46f1862c712adb0563036 Mon Sep 17 00:00:00 2001
+From: Biju Das <biju.das.jz@bp.renesas.com>
+Date: Thu, 27 May 2021 14:41:10 +0100
+Subject: [PATCH] drivers: clk: clk-versaclock3: Disable 32K parent for SE2.
+
+Signed-off-by: Biju Das <biju.das.jz@bp.renesas.com>
+---
+ drivers/clk/clk-versaclock3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/clk/clk-versaclock3.c b/drivers/clk/clk-versaclock3.c
+index bbb2c5c189e7..6188747fb03c 100644
+--- a/drivers/clk/clk-versaclock3.c
++++ b/drivers/clk/clk-versaclock3.c
+@@ -1081,7 +1081,7 @@ static int vc3_probe(struct i2c_client *client,
+ 			pll_parent_names[0] = vc3_div_names[4];
+ 			pll_parent_names[1] = vc3_div_names[3];
+ 			pll_parent_names[2] = "32k";
+-			init.num_parents = 3;
++			init.num_parents = 2;
+ 			init.parent_names = pll_parent_names;
+ 			break;
+ 		case 4:
+-- 
+2.34.1
+

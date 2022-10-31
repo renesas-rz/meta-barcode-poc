@@ -1,0 +1,131 @@
+From b2f97b58e94634545588669638b4443eb6b1c6f7 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Fri, 3 Dec 2021 00:20:10 +0000
+Subject: [PATCH] mfd: renesas_raa215300: Add RTC battery charger support
+
+Add whatever is required to add support for the RTC battery charger.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../bindings/mfd/renesas,raa215300.txt        |  4 ++
+ drivers/mfd/renesas_raa215300.c               | 66 ++++++++++++++++++-
+ 2 files changed, 67 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt b/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
+index 6d211dc3db0a..1ceac54aa3c6 100644
+--- a/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
++++ b/Documentation/devicetree/bindings/mfd/renesas,raa215300.txt
+@@ -34,4 +34,8 @@ Example:
+ 		reg = <0x12>;
+ 
+ 		rtc-enable;
++
++		charger-enable;
++		charger-current-level = <60>;
++		charger-termination-voltage = <3000>;
+ 	};
+diff --git a/drivers/mfd/renesas_raa215300.c b/drivers/mfd/renesas_raa215300.c
+index a77e4195d129..6d33df0633c2 100644
+--- a/drivers/mfd/renesas_raa215300.c
++++ b/drivers/mfd/renesas_raa215300.c
+@@ -13,13 +13,29 @@
+ #include <linux/regmap.h>
+ #include <linux/of_platform.h>
+ 
+-#define RAA215300_REG_BLOCK_EN		0x6C
+-#define RAA215300_RTC_EN		BIT(6)
++#define RAA215300_REG_FAULT_LATCHED_STATUS_6	0x5E
++#define RAA215300_PGOOD_CCBAT			BIT(7)
++
++#define RAA215300_REG_BLOCK_EN			0x6C
++#define RAA215300_RTC_EN			BIT(6)
++#define RAA215300_CHARGER_EN			BIT(5)
++
++#define RAA215300_REG_CONFIG1			0x6F
++#define RAA215300_CHARGE_CURRENT_LEVEL		BIT(7)
++
++#define RAA215300_REG_CONFIG2			0x70
++#define RAA215300_VCCBAT			GENMASK(7, 4)
++
++#define RAA215300_CHARGER_DEFAULT_CURRENT	20
++#define RAA215300_CHARGER_DEFAULT_VOLTAGE	1800
+ 
+ struct raa215300 {
+ 	struct regmap		*regmap;
+ 	struct i2c_client	*client;
+ 	bool			rtc_enabled;
++	bool			charger_enable;
++	u32			charger_current_level;
++	u32			charger_termination_voltage;
+ };
+ 
+ static bool raa215300_is_volatile_reg(struct device *dev, unsigned int reg)
+@@ -39,6 +55,7 @@ static int raa215300_i2c_probe(struct i2c_client *client,
+ 			       const struct i2c_device_id *id)
+ {
+ 	struct raa215300 *pmic;
++	u32 val;
+ 	int ret;
+ 
+ 	pmic = devm_kzalloc(&client->dev, sizeof(*pmic), GFP_KERNEL);
+@@ -59,13 +76,56 @@ static int raa215300_i2c_probe(struct i2c_client *client,
+ 	pmic->client = client;
+ 	i2c_set_clientdata(client, pmic);
+ 
++	// PMIC enable
+ 	pmic->rtc_enabled = of_property_read_bool(client->dev.of_node,
+ 						  "rtc-enable");
+-
+ 	if (pmic->rtc_enabled) {
+ 		regmap_update_bits(pmic->regmap, RAA215300_REG_BLOCK_EN,
+ 				   RAA215300_RTC_EN, 0x40);
+ 		dev_info(&client->dev, "RTC enabled\n");
++	} else {
++		regmap_update_bits(pmic->regmap, RAA215300_REG_BLOCK_EN,
++				   RAA215300_RTC_EN, 0x00);
++	}
++
++	// RTC battery charger current level
++	val = RAA215300_CHARGER_DEFAULT_CURRENT;
++	ret = of_property_read_u32(client->dev.of_node, "charger-current-level",
++				   &val);
++
++	if (!ret && val != 20 && val != 60)
++		val = RAA215300_CHARGER_DEFAULT_CURRENT;
++
++	regmap_update_bits(pmic->regmap, RAA215300_REG_CONFIG1,
++			   RAA215300_CHARGE_CURRENT_LEVEL, val == 60 ? 0x80 : 0);
++	pmic->charger_current_level = val;
++
++	// RTC battery charger termination voltage
++	val = RAA215300_CHARGER_DEFAULT_VOLTAGE;
++	ret = of_property_read_u32(client->dev.of_node,
++				   "charger-termination-voltage", &val);
++
++	if (!ret && (val < 1800 || val > 3300))
++		val = RAA215300_CHARGER_DEFAULT_VOLTAGE;
++
++	regmap_update_bits(pmic->regmap, RAA215300_REG_CONFIG2,
++			   RAA215300_VCCBAT, ((val - 1800) / 100) << 4);
++	pmic->charger_termination_voltage = val;
++
++	// RTC battery charger enable
++	pmic->charger_enable = of_property_read_bool(client->dev.of_node,
++						      "charger-enable");
++	if (pmic->charger_enable) {
++		regmap_update_bits(pmic->regmap, RAA215300_REG_BLOCK_EN,
++				   RAA215300_CHARGER_EN, 0x20);
++		dev_info(&client->dev, "RTC battery charger current level set to %uuA\n",
++			 pmic->charger_current_level);
++		dev_info(&client->dev, "RTC battery charger voltage terminator set to %umV\n",
++			 pmic->charger_termination_voltage);
++		dev_info(&client->dev, "RTC battery charger enabled\n");
++	} else {
++		regmap_update_bits(pmic->regmap, RAA215300_REG_BLOCK_EN,
++				   RAA215300_CHARGER_EN, 0x00);
+ 	}
+ 
+ 	dev_info(&client->dev, "RAA215300 initialized");
+-- 
+2.34.1
+

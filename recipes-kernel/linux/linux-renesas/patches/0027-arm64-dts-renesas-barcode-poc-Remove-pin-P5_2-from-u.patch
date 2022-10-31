@@ -1,0 +1,32 @@
+From 8b8f2c0cbd2df253acc5e43d5677f803a9d89c87 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 21 Jul 2022 11:09:49 +0100
+Subject: [PATCH] arm64: dts: renesas: barcode-poc: Remove pin P5_2 from
+ usb0_pins
+
+Pin P5_2 is not actually used by USB on the Barcode-PoC carrier board,
+and it clashes with the PMOD interface, take it out so that it can be
+repurposed.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+index ae555fcdc7b7..5931c967c243 100644
+--- a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
++++ b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+@@ -211,8 +211,7 @@ sd1_pwr_en {
+ 	usb0_pins: usb0 {
+ 		pinmux = <RZG2L_PORT_PINMUX(4, 0, 1)>, /* VBUS */
+ 			 <RZG2L_PORT_PINMUX(5, 0, 1)>, /* OVC */
+-			 <RZG2L_PORT_PINMUX(5, 1, 1)>, /* OTG_ID */
+-			 <RZG2L_PORT_PINMUX(5, 2, 1)>;
++			 <RZG2L_PORT_PINMUX(5, 1, 1)>; /* OTG_ID */
+ 	};
+ 
+ 	/* USB Channel 1 */
+-- 
+2.34.1
+

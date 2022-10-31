@@ -1,0 +1,927 @@
+From c66bdb71963cbbe69e00685b9c80a547b0634e1b Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Wed, 15 Jun 2022 19:00:57 +0100
+Subject: [PATCH] iio: light: vcnl4035: Add PS support
+
+This commit adds proximity sensing support to the vcnl4035 driver.
+It also removes the hooks for the power management as some refined is
+needed and I didn't have the time to look into those, too.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../bindings/iio/light/vishay,vcnl4035.yaml   |  13 +
+ drivers/iio/light/vcnl4035.c                  | 619 +++++++++++++++---
+ 2 files changed, 529 insertions(+), 103 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/iio/light/vishay,vcnl4035.yaml b/Documentation/devicetree/bindings/iio/light/vishay,vcnl4035.yaml
+index 2c57ff05de15..643d024a3485 100644
+--- a/Documentation/devicetree/bindings/iio/light/vishay,vcnl4035.yaml
++++ b/Documentation/devicetree/bindings/iio/light/vishay,vcnl4035.yaml
+@@ -22,6 +22,17 @@ properties:
+   interrupts:
+     maxItems: 1
+ 
++  ired-led:
++    description:
++      The VCNL4035 can drive 3 IR LEDs (numbered from 1 to 3), this property
++      allows for selection of the IR LED to use.
++    $ref: /schemas/types.yaml#/definitions/uint32
++    default: 1
++    enum:
++      - 1
++      - 2
++      - 3
++
+ additionalProperties: false
+ 
+ required:
+@@ -40,6 +51,8 @@ examples:
+             reg = <0x60>;
+             interrupt-parent = <&gpio4>;
+             interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
++
++            ired-led = <1>;
+         };
+     };
+ ...
+diff --git a/drivers/iio/light/vcnl4035.c b/drivers/iio/light/vcnl4035.c
+index 8c291c2c9a30..e4b720d980db 100644
+--- a/drivers/iio/light/vcnl4035.c
++++ b/drivers/iio/light/vcnl4035.c
+@@ -7,10 +7,21 @@
+  *
+  * TODO: Proximity
+  */
++
++/* Notes
++ * Example: drivers/iio/light/gp2ap020a00f.c
++ * Documentation: Documentation/driver-api/iio/
++ *
++ * TODO
++ * Do we need to set field address for iio_chan_spec?
++ */
++
+ #include <linux/bitops.h>
+ #include <linux/i2c.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/pm_runtime.h>
++#include <linux/property.h>
+ #include <linux/regmap.h>
+ 
+ #include <linux/iio/buffer.h>
+@@ -29,6 +40,14 @@
+ #define VCNL4035_ALS_CONF	0x00
+ #define VCNL4035_ALS_THDH	0x01
+ #define VCNL4035_ALS_THDL	0x02
++#define VCNL4035_PS_CONF12	0x03
++#define VCNL4035_PS_CONF3_MS	0x04
++#define VCNL4035_PS_CANC	0x05
++#define VCNL4035_PS_THDL	0x06
++#define VCNL4035_PS_THDH	0x07
++#define VCNL4035_PS1_DATA	0x08
++#define VCNL4035_PS2_DATA	0x09
++#define VCNL4035_PS3_DATA	0x0A
+ #define VCNL4035_ALS_DATA	0x0B
+ #define VCNL4035_WHITE_DATA	0x0C
+ #define VCNL4035_INT_FLAG	0x0D
+@@ -40,12 +59,43 @@
+ #define VCNL4035_MODE_ALS_INT_MASK	BIT(1)
+ #define VCNL4035_ALS_IT_MASK		GENMASK(7, 5)
+ #define VCNL4035_ALS_PERS_MASK		GENMASK(3, 2)
+-#define VCNL4035_INT_ALS_IF_H_MASK	BIT(12)
+-#define VCNL4035_INT_ALS_IF_L_MASK	BIT(13)
++
++/* Masks for register VCNL4035_PS_CONF12 */
++#define VCNL4035_GESTURE_INT_EN_MASK	BIT(15)
++#define VCNL4035_GESTURE_MODE_MASK	BIT(14)
++#define VCNL4035_PS_GAIN_MASK		GENMASK(13, 12)
++#define VCNL4035_PS_HD_MASK		BIT(11)
++#define VCNL4035_PS_NS_MASK		BIT(10)
++#define VCNL4035_PS_INT_MASK		GENMASK(9, 8)
++#define VCNL4035_PS_DUTY_MASK		GENMASK(7, 6)
++#define VCNL4035_PS_PERS_MASK		GENMASK(5, 4)
++#define VCNL4035_PS_IT_MASK		GENMASK(3, 1)
++#define VCNL4035_PS_SD_MASK		BIT(0)
++
++/* Masks for register VCNL4035_PS_CONF3_MS */
++#define VCNL4035_PS_SC_CUR_MASK		GENMASK(14, 13)
++#define VCNL4035_PS_SP_MASK		BIT(12)
++#define VCNL4035_PS_SPO_MASK		BIT(11)
++#define VCNL4035_LED_I_MASK		BIT(10, 8)
++#define VCNL4035_LED_I_LOW_MASK		BIT(7)
++#define VCNL4035_IRED_SELECT_MASK	GENMASK(6, 5)
++#define VCNL4035_PS_SMART_PERS_MASK	BIT(4)
++#define VCNL4035_PS_AF_MASK		BIT(3)
++#define VCNL4035_PS_TRIG_MASK		BIT(2)
++#define VCNL4035_PS_MS_MASK		BIT(1)
++#define VCNL4035_PS_SC_EN_MASK		BIT(0)
++
++/* Masks for register VCNL4035_INT_FLAG */
++#define VCNL4035_GESTURE_DATA_READY_FLAG_MASK	BIT(15)
++#define VCNL4035_PS_SPFLAG_MASK			BIT(14)
++#define VCNL4035_INT_ALS_IF_L_MASK		BIT(13)
++#define VCNL4035_INT_ALS_IF_H_MASK		BIT(12)
++#define VCNL4035_PS_IF_CLOSE_MASK		BIT(9)
++#define VCNL4035_PS_IF_AWAY_MASK		BIT(8)
+ 
+ /* Default values */
+-#define VCNL4035_MODE_ALS_ENABLE	BIT(0)
+-#define VCNL4035_MODE_ALS_DISABLE	0x00
++#define VCNL4035_MODE_ALS_ENABLE	0x00
++#define VCNL4035_MODE_ALS_DISABLE	BIT(0)
+ #define VCNL4035_MODE_ALS_INT_ENABLE	BIT(1)
+ #define VCNL4035_MODE_ALS_INT_DISABLE	0
+ #define VCNL4035_DEV_ID_VAL		0x80
+@@ -55,6 +105,96 @@
+ #define VCNL4035_ALS_THDL_DEFAULT	100
+ #define VCNL4035_SLEEP_DELAY_MS		2000
+ 
++#define VCNL4035_GESTURE_INT_EN_ENABLED		BIT(15)
++#define VCNL4035_GESTURE_INT_EN_DISABLED	0
++
++#define VCNL4035_GESTURE_MODE_ENABLED		BIT(14)
++#define VCNL4035_GESTURE_MODE_DISABLED		0
++
++#define VCNL4035_PS_GAIN_TWO_STEP_MODE		0
++#define VCNL4035_PS_GAIN_SINGLE_STEP_MODE_X_8	BIT(13)
++#define VCNL4035_PS_GAIN_SINGLE_STEP_MODE_X_1	GENMASK(13, 12)
++
++#define VCNL4035_PS_HD_12BIT			0
++#define VCNL4035_PS_HD_16BIT			BIT(11)
++
++#define VCNL4035_PS_NS_TWO_STEP_MODE_X_4	0
++#define VCNL4035_PS_NS_TWO_STEP_MODE		BIT(10)
++
++#define VCNL4035_PS_INT_DISABLED		0
++#define VCNL4035_PS_INT_TRIGGER_BY_CLOSING	BIT(8)
++#define VCNL4035_PS_INT_TRIGGER_BY_AWAY		BIT(9)
++#define VCNL4035_PS_INT_TRIGGER_BY_BOTH		GENMASK(9, 8)
++
++/* Duty cycle = 1 / (40 * 2^x), with 0 <= x <= 3 */
++#define VCNL4035_DUTY_CYCLE(x)			(((x) << 6) & VCNL4035_PS_DUTY_MASK)
++
++/* PS interrupt persistence, with 1 <= 1 x <= 4 */
++#define VCNL4035_PS_PERS(x)			((((x) - 1) << 4) & VCNL4035_PS_PERS_MASK)
++
++#define VCNL4035_PS_IT_1T			0
++#define VCNL4035_PS_IT_1_5T			BIT(1)
++#define VCNL4035_PS_IT_2T			BIT(2)
++#define VCNL4035_PS_IT_2_5T			GENMASK(2, 1)
++#define VCNL4035_PS_IT_3T			BIT(3)
++#define VCNL4035_PS_IT_3_5T			BIT(3) | BIT(1)
++#define VCNL4035_PS_IT_4T			GENMASK(3, 2)
++#define VCNL4035_PS_IT_8T			GENMASK(3, 1)
++
++#define VCNL4035_MODE_PS_ENABLE			0
++#define VCNL4035_MODE_PS_DISABLE		BIT(0)
++
++#define VCNL4035_PS_SC_CUR_X_1			0
++#define VCNL4035_PS_SC_CUR_X_2			BIT(13)
++#define VCNL4035_PS_SC_CUR_X_4			BIT(14)
++#define VCNL4035_PS_SC_CUR_X_8			GENMASK(14, 13)
++
++#define VCNL4035_PS_SP_X_1			0
++#define VCNL4035_PS_SP_X_1_5			BIT(12)
++
++#define VCNL4035_PS_SPO_0x00			0
++#define VCNL4035_PS_SPO_0xFF			BIT(11)
++
++#define VCNL4035_LED_I_50mA			0
++#define VCNL4035_LED_I_75mA			BIT(8)
++#define VCNL4035_LED_I_100mA			BIT(9)
++#define VCNL4035_LED_I_120mA			GENMASK(9, 8)
++#define VCNL4035_LED_I_140mA			BIT(10)
++#define VCNL4035_LED_I_160mA			BIT(10) | BIT(8)
++#define VCNL4035_LED_I_180mA			GENMASK(10, 9)
++#define VCNL4035_LED_I_200mA			GENMASK(10, 8)
++
++#define VCNL4035_LED_I_LOW_NORMAL_CURRENT	0
++#define VCNL4035_LED_I_LOW_CURRENT_BY_10	BIT(7)
++
++/* IR LED selection, with 1 <= x <= 3 */
++#define VCNL4035_IRED_SELECT(x)			((((x) - 1) << 5) & VCNL4035_IRED_SELECT_MASK)
++
++#define VCNL4035_PS_SMART_PERS_DISABLED		0
++#define VCNL4035_PS_SMART_PERS_ENABLED		BIT(4)
++
++#define VCNL4035_PS_AF_DISABLED			0
++#define VCNL4035_PS_AF_ENABLED			BIT(3)
++
++#define VCNL4035_PS_TRIG_DISABLED		0
++#define VCNL4035_PS_TRIG_ENABLED		BIT(2)
++
++#define VCNL4035_PS_MS_INTERRUPT_MODE		0
++#define VCNL4035_PS_MS_OUTPUT_MODE		BIT(1)
++
++#define VCNL4035_PS_SC_EN_DISABLED		0
++#define VCNL4035_PS_SC_EN_ENABLED		BIT(0)
++
++#define VCNL4035_IRED_DEFAULT			1
++#define VCNL4035_PS_THDL_DEFAULT		125
++#define VCNL4035_PS_THDH_DEFAULT		135
++
++enum vcnl4035_scan_index_order {
++	VCNL4035_CHAN_INDEX_LIGHT,
++	VCNL4035_CHAN_INDEX_WHITE_LED,
++	VCNL4035_CHAN_INDEX_PROXIMITY,
++};
++
+ struct vcnl4035_data {
+ 	struct i2c_client *client;
+ 	struct regmap *regmap;
+@@ -63,37 +203,64 @@ struct vcnl4035_data {
+ 	unsigned int als_thresh_low;
+ 	unsigned int als_thresh_high;
+ 	struct iio_trigger *drdy_trigger0;
++	unsigned int ps_it_val;
++	unsigned int ps_thresh_low;
++	unsigned int ps_thresh_high;
++	unsigned int ired_led;
++	unsigned int ired_register;
+ };
+ 
+-static inline bool vcnl4035_is_triggered(struct vcnl4035_data *data)
++static inline bool vcnl4035_is_als_triggered(unsigned int reg)
+ {
+-	int ret;
+-	int reg;
+-
+-	ret = regmap_read(data->regmap, VCNL4035_INT_FLAG, &reg);
+-	if (ret < 0)
+-		return false;
++	return !!(reg &
++		  (VCNL4035_INT_ALS_IF_H_MASK | VCNL4035_INT_ALS_IF_L_MASK));
++}
+ 
++static inline bool vcnl4035_is_ps_triggered(unsigned int reg)
++{
+ 	return !!(reg &
+-		(VCNL4035_INT_ALS_IF_H_MASK | VCNL4035_INT_ALS_IF_L_MASK));
++		  (VCNL4035_PS_IF_CLOSE_MASK | VCNL4035_PS_IF_AWAY_MASK));
+ }
+ 
+ static irqreturn_t vcnl4035_drdy_irq_thread(int irq, void *private)
+ {
+ 	struct iio_dev *indio_dev = private;
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
++	int ret;
++	unsigned int reg;
++	irqreturn_t to_return = IRQ_NONE;
+ 
+-	if (vcnl4035_is_triggered(data)) {
++	ret = regmap_read(data->regmap, VCNL4035_INT_FLAG, &reg);
++	if (ret < 0)
++		return to_return;
++
++	if (vcnl4035_is_als_triggered(reg)) {
+ 		iio_push_event(indio_dev, IIO_UNMOD_EVENT_CODE(IIO_LIGHT,
+-							0,
++							VCNL4035_CHAN_INDEX_LIGHT,
+ 							IIO_EV_TYPE_THRESH,
+ 							IIO_EV_DIR_EITHER),
+ 				iio_get_time_ns(indio_dev));
+-		iio_trigger_poll_chained(data->drdy_trigger0);
+-		return IRQ_HANDLED;
++		to_return = IRQ_HANDLED;
++	}
++	if (vcnl4035_is_ps_triggered(reg)) {
++		u64 ev_dir;
++
++		if (reg & VCNL4035_PS_IF_CLOSE_MASK)
++			ev_dir = IIO_EV_DIR_RISING;
++		else
++			ev_dir = IIO_EV_DIR_FALLING;
++
++		iio_push_event(indio_dev, IIO_UNMOD_EVENT_CODE(IIO_PROXIMITY,
++			VCNL4035_CHAN_INDEX_PROXIMITY,
++			IIO_EV_TYPE_THRESH, ev_dir),
++			iio_get_time_ns(indio_dev));
++		to_return = IRQ_HANDLED;
+ 	}
+ 
+-	return IRQ_NONE;
++	if (to_return == IRQ_HANDLED)
++		iio_trigger_poll_chained(data->drdy_trigger0);
++
++	return to_return;
+ }
+ 
+ /* Triggered buffer */
+@@ -102,16 +269,38 @@ static irqreturn_t vcnl4035_trigger_consumer_handler(int irq, void *p)
+ 	struct iio_poll_func *pf = p;
+ 	struct iio_dev *indio_dev = pf->indio_dev;
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
+-	/* Ensure naturally aligned timestamp */
+-	u8 buffer[ALIGN(sizeof(u16), sizeof(s64)) + sizeof(s64)]  __aligned(8);
+-	int ret;
++	u16 buffer[8];
++	int ret, j = 0;
++	unsigned int val;
+ 
+-	ret = regmap_read(data->regmap, VCNL4035_ALS_DATA, (int *)buffer);
+-	if (ret < 0) {
+-		dev_err(&data->client->dev,
+-			"Trigger consumer can't read from sensor.\n");
+-		goto fail_read;
++	if (test_bit(VCNL4035_CHAN_INDEX_LIGHT, indio_dev->active_scan_mask)) {
++		ret = regmap_read(data->regmap, VCNL4035_ALS_DATA, &val);
++		if (ret < 0) {
++			dev_err(&data->client->dev,
++				"ALS trigger consumer can't read from sensor.\n");
++			goto fail_read;
++		}
++		buffer[j++] = le16_to_cpu(val);
++	}
++	if (test_bit(VCNL4035_CHAN_INDEX_WHITE_LED, indio_dev->active_scan_mask)) {
++		ret = regmap_read(data->regmap, VCNL4035_WHITE_DATA, &val);
++		if (ret < 0) {
++			dev_err(&data->client->dev,
++				"WHITE trigger consumer can't read from sensor.\n");
++			goto fail_read;
++		}
++		buffer[j++] = le16_to_cpu(val);
+ 	}
++	if (test_bit(VCNL4035_CHAN_INDEX_PROXIMITY, indio_dev->active_scan_mask)) {
++		ret = regmap_read(data->regmap, data->ired_register, &val);
++		if (ret < 0) {
++			dev_err(&data->client->dev,
++				"PS Trigger consumer can't read from sensor.\n");
++			goto fail_read;
++		}
++		buffer[j++] = le16_to_cpu(val);
++	}
++
+ 	iio_push_to_buffers_with_timestamp(indio_dev, buffer,
+ 					iio_get_time_ns(indio_dev));
+ 
+@@ -126,12 +315,27 @@ static int vcnl4035_als_drdy_set_state(struct iio_trigger *trigger,
+ {
+ 	struct iio_dev *indio_dev = iio_trigger_get_drvdata(trigger);
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
+-	int val = enable_drdy ? VCNL4035_MODE_ALS_INT_ENABLE :
+-					VCNL4035_MODE_ALS_INT_DISABLE;
++	int val, ret, bit;
++
++	for_each_set_bit(bit, indio_dev->active_scan_mask, indio_dev->masklength) {
++		if (bit == VCNL4035_CHAN_INDEX_LIGHT || bit == VCNL4035_CHAN_INDEX_WHITE_LED) {
++			val = enable_drdy ? VCNL4035_MODE_ALS_INT_ENABLE :
++				VCNL4035_MODE_ALS_INT_DISABLE;
++			ret = regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
++				VCNL4035_MODE_ALS_INT_MASK, val);
++			if (ret)
++				return ret;
++		} else {
++			val = enable_drdy ? VCNL4035_PS_INT_TRIGGER_BY_BOTH :
++				VCNL4035_PS_INT_DISABLED;
++			ret = regmap_update_bits(data->regmap, VCNL4035_PS_CONF12,
++				VCNL4035_PS_INT_MASK, val);
++			if (ret)
++				return ret;
++		}
++	}
+ 
+-	return regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
+-				 VCNL4035_MODE_ALS_INT_MASK,
+-				 val);
++	return 0;
+ }
+ 
+ static const struct iio_trigger_ops vcnl4035_trigger_ops = {
+@@ -154,6 +358,9 @@ static int vcnl4035_set_pm_runtime_state(struct vcnl4035_data *data, bool on)
+ 	return ret;
+ }
+ 
++static const u16 vcnl4035_als_it_values[] = {50, 100, 200, 400, 800};
++static const u16 vcnl4035_ps_it_values[] = {10, 15, 20, 25, 30, 35, 40, 80};
++
+ /*
+  *	Device IT	INT Time (ms)	Scale (lux/step)
+  *	000		50		0.064
+@@ -184,12 +391,25 @@ static int vcnl4035_read_raw(struct iio_dev *indio_dev,
+ 
+ 		ret = iio_device_claim_direct_mode(indio_dev);
+ 		if (!ret) {
+-			if (chan->channel)
++			switch (chan->scan_index) {
++			case VCNL4035_CHAN_INDEX_LIGHT:
+ 				reg = VCNL4035_ALS_DATA;
+-			else
++				break;
++			case VCNL4035_CHAN_INDEX_WHITE_LED:
+ 				reg = VCNL4035_WHITE_DATA;
++				break;
++			case VCNL4035_CHAN_INDEX_PROXIMITY:
++				reg = data->ired_register;
++				break;
++			default:
++				iio_device_release_direct_mode(indio_dev);
++				vcnl4035_set_pm_runtime_state(data, false);
++				return -EINVAL;
++			}
++
+ 			ret = regmap_read(data->regmap, reg, &raw_data);
+ 			iio_device_release_direct_mode(indio_dev);
++
+ 			if (!ret) {
+ 				*val = raw_data;
+ 				ret = IIO_VAL_INT;
+@@ -198,16 +418,20 @@ static int vcnl4035_read_raw(struct iio_dev *indio_dev,
+ 		vcnl4035_set_pm_runtime_state(data, false);
+ 		return ret;
+ 	case IIO_CHAN_INFO_INT_TIME:
+-		*val = 50;
+-		if (data->als_it_val)
+-			*val = data->als_it_val * 100;
++		switch (chan->scan_index) {
++		case VCNL4035_CHAN_INDEX_LIGHT:
++			*val = vcnl4035_als_it_values[data->als_it_val];
++			break;
++		case VCNL4035_CHAN_INDEX_PROXIMITY:
++			*val = vcnl4035_ps_it_values[data->ps_it_val];
++			break;
++		default:
++			return -EINVAL;
++		}
+ 		return IIO_VAL_INT;
+ 	case IIO_CHAN_INFO_SCALE:
+ 		*val = 64;
+-		if (!data->als_it_val)
+-			*val2 = 1000;
+-		else
+-			*val2 = data->als_it_val * 2 * 1000;
++		*val2 = (1U << data->als_it_val) * 1000;
+ 		return IIO_VAL_FRACTIONAL;
+ 	default:
+ 		return -EINVAL;
+@@ -219,22 +443,46 @@ static int vcnl4035_write_raw(struct iio_dev *indio_dev,
+ 				int val, int val2, long mask)
+ {
+ 	int ret;
++	unsigned int it_reg, *it_variable, it_value, it_mask, i;
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
+ 
+ 	switch (mask) {
+ 	case IIO_CHAN_INFO_INT_TIME:
+-		if (val <= 0 || val > 800)
++		switch (chan->scan_index) {
++		case VCNL4035_CHAN_INDEX_LIGHT:
++			for (i = 0; i < ARRAY_SIZE(vcnl4035_als_it_values); i++)
++				if (vcnl4035_als_it_values[i] == val)
++					break;
++			if (i == ARRAY_SIZE(vcnl4035_als_it_values))
++				return -EINVAL;
++			it_variable = &data->als_it_val;
++			it_value = i << 5;
++			it_reg = VCNL4035_ALS_CONF;
++			it_mask = VCNL4035_ALS_IT_MASK;
++			break;
++		case VCNL4035_CHAN_INDEX_PROXIMITY:
++			for (i = 0; i < ARRAY_SIZE(vcnl4035_ps_it_values); i++)
++				if (vcnl4035_ps_it_values[i] == val)
++					break;
++			if (i == ARRAY_SIZE(vcnl4035_ps_it_values))
++				return -EINVAL;
++			it_variable = &data->ps_it_val;
++			it_value = i << 1;
++			it_reg = VCNL4035_PS_CONF12;
++			it_mask = VCNL4035_PS_IT_MASK;
++			break;
++		default:
+ 			return -EINVAL;
++		}
+ 
+ 		ret = vcnl4035_set_pm_runtime_state(data, true);
+ 		if  (ret < 0)
+ 			return ret;
+ 
+-		ret = regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
+-					 VCNL4035_ALS_IT_MASK,
+-					 val / 100);
++		ret = regmap_update_bits(data->regmap, it_reg, it_mask,
++					 it_value);
+ 		if (!ret)
+-			data->als_it_val = val / 100;
++			*it_variable = i;
+ 
+ 		vcnl4035_set_pm_runtime_state(data, false);
+ 		return ret;
+@@ -253,13 +501,31 @@ static int vcnl4035_read_thresh(struct iio_dev *indio_dev,
+ 
+ 	switch (info) {
+ 	case IIO_EV_INFO_VALUE:
+-		switch (dir) {
+-		case IIO_EV_DIR_RISING:
+-			*val = data->als_thresh_high;
+-			return IIO_VAL_INT;
+-		case IIO_EV_DIR_FALLING:
+-			*val = data->als_thresh_low;
+-			return IIO_VAL_INT;
++		switch (chan->scan_index) {
++		case VCNL4035_CHAN_INDEX_LIGHT:
++			switch (dir) {
++			case IIO_EV_DIR_RISING:
++				*val = data->als_thresh_high;
++				return IIO_VAL_INT;
++			case IIO_EV_DIR_FALLING:
++				*val = data->als_thresh_low;
++				return IIO_VAL_INT;
++			default:
++				return -EINVAL;
++			}
++			break;
++		case VCNL4035_CHAN_INDEX_PROXIMITY:
++			switch (dir) {
++			case IIO_EV_DIR_RISING:
++				*val = data->ps_thresh_high;
++				return IIO_VAL_INT;
++			case IIO_EV_DIR_FALLING:
++				*val = data->ps_thresh_low;
++				return IIO_VAL_INT;
++			default:
++				return -EINVAL;
++			}
++			break;
+ 		default:
+ 			return -EINVAL;
+ 		}
+@@ -286,22 +552,47 @@ static int vcnl4035_write_thresh(struct iio_dev *indio_dev,
+ 		/* 16 bit threshold range 0 - 65535 */
+ 		if (val < 0 || val > 65535)
+ 			return -EINVAL;
+-		if (dir == IIO_EV_DIR_RISING) {
+-			if (val < data->als_thresh_low)
+-				return -EINVAL;
+-			ret = regmap_write(data->regmap, VCNL4035_ALS_THDH,
+-					   val);
+-			if (ret)
+-				return ret;
+-			data->als_thresh_high = val;
+-		} else {
+-			if (val > data->als_thresh_high)
+-				return -EINVAL;
+-			ret = regmap_write(data->regmap, VCNL4035_ALS_THDL,
+-					   val);
+-			if (ret)
+-				return ret;
+-			data->als_thresh_low = val;
++		switch (chan->scan_index) {
++		case VCNL4035_CHAN_INDEX_LIGHT:
++			if (dir == IIO_EV_DIR_RISING) {
++				if (val < data->als_thresh_low)
++					return -EINVAL;
++				ret = regmap_write(data->regmap, VCNL4035_ALS_THDH,
++						   val);
++				if (ret)
++					return ret;
++				data->als_thresh_high = val;
++			} else {
++				if (val > data->als_thresh_high)
++					return -EINVAL;
++				ret = regmap_write(data->regmap, VCNL4035_ALS_THDL,
++						   val);
++				if (ret)
++					return ret;
++				data->als_thresh_low = val;
++			}
++			break;
++		case VCNL4035_CHAN_INDEX_PROXIMITY:
++			if (dir == IIO_EV_DIR_RISING) {
++				if (val < data->ps_thresh_low)
++					return -EINVAL;
++				ret = regmap_write(data->regmap, VCNL4035_PS_THDH,
++						   val);
++				if (ret)
++					return ret;
++				data->ps_thresh_high = val;
++			} else {
++				if (val > data->ps_thresh_high)
++					return -EINVAL;
++				ret = regmap_write(data->regmap, VCNL4035_PS_THDL,
++						   val);
++				if (ret)
++					return ret;
++				data->ps_thresh_low = val;
++			}
++			break;
++		default:
++			return -EINVAL;
+ 		}
+ 		return ret;
+ 	case IIO_EV_INFO_PERIOD:
+@@ -318,10 +609,12 @@ static int vcnl4035_write_thresh(struct iio_dev *indio_dev,
+ 	}
+ }
+ 
+-static IIO_CONST_ATTR_INT_TIME_AVAIL("50 100 200 400 800");
++static IIO_CONST_ATTR(integration_time_available_als, "50 100 200 400 800");
++static IIO_CONST_ATTR(integration_time_available_ps, "10 15 20 25 30 35 40 80");
+ 
+ static struct attribute *vcnl4035_attributes[] = {
+-	&iio_const_attr_integration_time_available.dev_attr.attr,
++	&iio_const_attr_integration_time_available_als.dev_attr.attr,
++	&iio_const_attr_integration_time_available_ps.dev_attr.attr,
+ 	NULL,
+ };
+ 
+@@ -353,13 +646,30 @@ static const struct iio_event_spec vcnl4035_event_spec[] = {
+ 	},
+ };
+ 
+-enum vcnl4035_scan_index_order {
+-	VCNL4035_CHAN_INDEX_LIGHT,
+-	VCNL4035_CHAN_INDEX_WHITE_LED,
++static const struct iio_event_spec vcnl4035_event_spec_ps[] = {
++	{
++		.type = IIO_EV_TYPE_THRESH,
++		.dir = IIO_EV_DIR_RISING,
++		.mask_separate = BIT(IIO_EV_INFO_VALUE),
++	}, {
++		.type = IIO_EV_TYPE_THRESH,
++		.dir = IIO_EV_DIR_FALLING,
++		.mask_separate = BIT(IIO_EV_INFO_VALUE),
++	}, {
++		.type = IIO_EV_TYPE_THRESH,
++		.dir = IIO_EV_DIR_EITHER,
++		.mask_separate = BIT(IIO_EV_INFO_PERIOD),
++	},
+ };
+ 
++static bool vcnl4035_validate_scan(struct iio_dev *indio_dev,
++	const unsigned long *mask)
++{
++	return true;
++}
++
+ static const struct iio_buffer_setup_ops iio_triggered_buffer_setup_ops = {
+-	.validate_scan_mask = &iio_validate_scan_mask_onehot,
++	.validate_scan_mask = &vcnl4035_validate_scan,
+ };
+ 
+ static const struct iio_chan_spec vcnl4035_channels[] = {
+@@ -393,19 +703,38 @@ static const struct iio_chan_spec vcnl4035_channels[] = {
+ 			.endianness = IIO_LE,
+ 		},
+ 	},
++	{
++		.type = IIO_PROXIMITY,
++		.modified = 0,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
++				BIT(IIO_CHAN_INFO_INT_TIME),
++		.event_spec = vcnl4035_event_spec_ps,
++		.num_event_specs = ARRAY_SIZE(vcnl4035_event_spec_ps),
++		.scan_index = VCNL4035_CHAN_INDEX_PROXIMITY,
++		.scan_type = {
++			.sign = 'u',
++			.realbits = 16,
++			.shift = 0,
++			.storagebits = 16,
++			.endianness = IIO_LE,
++		},
++	},
+ };
+ 
+-static int vcnl4035_set_als_power_state(struct vcnl4035_data *data, u8 status)
+-{
+-	return regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
+-					VCNL4035_MODE_ALS_MASK,
+-					status);
+-}
++static unsigned int vcnl4035_por_registers_values[] = {
++	0x0101, 0x0000, 0x0000, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++};
+ 
+ static int vcnl4035_init(struct vcnl4035_data *data)
+ {
+-	int ret;
+-	int id;
++	int ret, id, i;
++
++	for (i = 0; i < ARRAY_SIZE(vcnl4035_por_registers_values); i++) {
++		ret = regmap_write(data->regmap, i,
++				   vcnl4035_por_registers_values[i]);
++		if (ret)
++			return ret;
++	}
+ 
+ 	ret = regmap_read(data->regmap, VCNL4035_DEV_ID, &id);
+ 	if (ret < 0) {
+@@ -419,7 +748,8 @@ static int vcnl4035_init(struct vcnl4035_data *data)
+ 		return -ENODEV;
+ 	}
+ 
+-	ret = vcnl4035_set_als_power_state(data, VCNL4035_MODE_ALS_ENABLE);
++	ret = regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
++		VCNL4035_MODE_ALS_MASK, VCNL4035_MODE_ALS_ENABLE);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -436,7 +766,7 @@ static int vcnl4035_init(struct vcnl4035_data *data)
+ 	/* set default integration time - 100 ms for ALS */
+ 	ret = regmap_update_bits(data->regmap, VCNL4035_ALS_CONF,
+ 				 VCNL4035_ALS_IT_MASK,
+-				 VCNL4035_ALS_IT_DEFAULT);
++				 VCNL4035_ALS_IT_DEFAULT << 5);
+ 	if (ret) {
+ 		dev_err(&data->client->dev, "set default ALS IT returned %d\n",
+ 			ret);
+@@ -475,6 +805,63 @@ static int vcnl4035_init(struct vcnl4035_data *data)
+ 	}
+ 	data->als_thresh_low = VCNL4035_ALS_THDL_DEFAULT;
+ 
++	/* PS init */
++	data->ps_thresh_low = VCNL4035_PS_THDL_DEFAULT;
++	ret = regmap_write(data->regmap, VCNL4035_PS_THDL, data->ps_thresh_low);
++	if (ret) {
++		dev_err(&data->client->dev,
++			"failed to configure low threshhold for PS with error %d",
++			ret);
++		return ret;
++	}
++
++	data->ps_thresh_high = VCNL4035_PS_THDH_DEFAULT;
++	ret = regmap_write(data->regmap, VCNL4035_PS_THDH, data->ps_thresh_high);
++	if (ret) {
++		dev_err(&data->client->dev,
++			"failed to configure high threshhold for PS with error %d",
++			ret);
++		return ret;
++	}
++
++	data->ps_it_val = 7;
++	ret = regmap_write(data->regmap, VCNL4035_PS_CONF12,
++			   VCNL4035_GESTURE_INT_EN_DISABLED |
++			   VCNL4035_GESTURE_MODE_DISABLED |
++			   VCNL4035_PS_GAIN_TWO_STEP_MODE |
++			   VCNL4035_PS_HD_16BIT |
++			   VCNL4035_PS_NS_TWO_STEP_MODE_X_4 |
++			   VCNL4035_PS_INT_DISABLED |
++			   VCNL4035_DUTY_CYCLE(1) |
++			   VCNL4035_PS_PERS(4) |
++			   (data->ps_it_val << 1) |
++			   VCNL4035_MODE_PS_ENABLE
++			   );
++	if (ret) {
++		dev_err(&data->client->dev,
++			"failed to write PS configuration with error %d", ret);
++		return ret;
++	}
++
++	ret = regmap_write(data->regmap, VCNL4035_PS_CONF3_MS,
++			   VCNL4035_PS_SC_CUR_X_1 |
++			   VCNL4035_PS_SP_X_1 |
++			   VCNL4035_PS_SPO_0x00 |
++			   VCNL4035_LED_I_200mA |
++			   VCNL4035_LED_I_LOW_NORMAL_CURRENT |
++			   VCNL4035_IRED_SELECT(data->ired_led) |
++			   VCNL4035_PS_SMART_PERS_DISABLED |
++			   VCNL4035_PS_AF_DISABLED |
++			   VCNL4035_PS_TRIG_DISABLED |
++			   VCNL4035_PS_MS_INTERRUPT_MODE |
++			   VCNL4035_PS_SC_EN_DISABLED
++			   );
++	if (ret) {
++		dev_err(&data->client->dev,
++			"failed to write PS configuration with error %d", ret);
++		return ret;
++	}
++
+ 	return 0;
+ }
+ 
+@@ -531,8 +918,7 @@ static int vcnl4035_probe_trigger(struct iio_dev *indio_dev)
+ 
+ 	/* IRQ to trigger mapping */
+ 	ret = devm_request_threaded_irq(&data->client->dev, data->client->irq,
+-			NULL, vcnl4035_drdy_irq_thread,
+-			IRQF_TRIGGER_LOW | IRQF_ONESHOT,
++			NULL, vcnl4035_drdy_irq_thread, IRQF_ONESHOT,
+ 			VCNL4035_IRQ_NAME, indio_dev);
+ 	if (ret < 0)
+ 		dev_err(&data->client->dev, "request irq %d for trigger0 failed\n",
+@@ -540,6 +926,37 @@ static int vcnl4035_probe_trigger(struct iio_dev *indio_dev)
+ 	return ret;
+ }
+ 
++static int vcnl4035_parse_dt(struct vcnl4035_data *data)
++{
++	unsigned int tmp;
++	int ret;
++
++	ret = device_property_read_u32(&data->client->dev, "ired-led", &tmp);
++	if (ret) {
++		data->ired_led = VCNL4035_IRED_DEFAULT;
++	} else if (tmp < 1 || tmp > 3) {
++		dev_err(&data->client->dev,
++			"'%u' Invalid selection for the IR LED\n", tmp);
++		data->ired_led = VCNL4035_IRED_DEFAULT;
++	} else {
++		data->ired_led = tmp;
++	}
++	dev_info(&data->client->dev, "Using IR LED %u\n", data->ired_led);
++
++	switch (data->ired_led) {
++	case 1:
++		data->ired_register = VCNL4035_PS1_DATA;
++		break;
++	case 2:
++		data->ired_register = VCNL4035_PS2_DATA;
++		break;
++	case 3:
++		data->ired_register = VCNL4035_PS3_DATA;
++	}
++
++	return 0;
++}
++
+ static int vcnl4035_probe(struct i2c_client *client,
+ 				const struct i2c_device_id *id)
+ {
+@@ -569,6 +986,11 @@ static int vcnl4035_probe(struct i2c_client *client,
+ 	indio_dev->num_channels = ARRAY_SIZE(vcnl4035_channels);
+ 	indio_dev->modes = INDIO_DIRECT_MODE;
+ 
++	ret = vcnl4035_parse_dt(data);
++	if (ret) {
++		dev_err(&client->dev, "Problems while parsing the DT\n");
++	}
++
+ 	ret = vcnl4035_init(data);
+ 	if (ret < 0) {
+ 		dev_err(&client->dev, "vcnl4035 chip init failed\n");
+@@ -579,27 +1001,25 @@ static int vcnl4035_probe(struct i2c_client *client,
+ 		ret = vcnl4035_probe_trigger(indio_dev);
+ 		if (ret < 0) {
+ 			dev_err(&client->dev, "vcnl4035 unable init trigger\n");
+-			goto fail_poweroff;
++			return ret;
+ 		}
+ 	}
+ 
+ 	ret = pm_runtime_set_active(&client->dev);
+ 	if (ret < 0)
+-		goto fail_poweroff;
++		return ret;
+ 
+ 	ret = iio_device_register(indio_dev);
+-	if (ret < 0)
+-		goto fail_poweroff;
++	if (ret < 0) {
++		pm_runtime_set_suspended(&client->dev);
++		return ret;
++	}
+ 
+ 	pm_runtime_enable(&client->dev);
+ 	pm_runtime_set_autosuspend_delay(&client->dev, VCNL4035_SLEEP_DELAY_MS);
+ 	pm_runtime_use_autosuspend(&client->dev);
+ 
+ 	return 0;
+-
+-fail_poweroff:
+-	vcnl4035_set_als_power_state(data, VCNL4035_MODE_ALS_DISABLE);
+-	return ret;
+ }
+ 
+ static int vcnl4035_remove(struct i2c_client *client)
+@@ -611,35 +1031,28 @@ static int vcnl4035_remove(struct i2c_client *client)
+ 	iio_device_unregister(indio_dev);
+ 	pm_runtime_set_suspended(&client->dev);
+ 
+-	return vcnl4035_set_als_power_state(iio_priv(indio_dev),
+-					VCNL4035_MODE_ALS_DISABLE);
++	return 0;
+ }
+ 
+ static int __maybe_unused vcnl4035_runtime_suspend(struct device *dev)
+ {
+ 	struct iio_dev *indio_dev = i2c_get_clientdata(to_i2c_client(dev));
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
+-	int ret;
+ 
+-	ret = vcnl4035_set_als_power_state(data, VCNL4035_MODE_ALS_DISABLE);
+ 	regcache_mark_dirty(data->regmap);
+ 
+-	return ret;
++	return 0;
+ }
+ 
+ static int __maybe_unused vcnl4035_runtime_resume(struct device *dev)
+ {
+ 	struct iio_dev *indio_dev = i2c_get_clientdata(to_i2c_client(dev));
+ 	struct vcnl4035_data *data = iio_priv(indio_dev);
+-	int ret;
+ 
+ 	regcache_sync(data->regmap);
+-	ret = vcnl4035_set_als_power_state(data, VCNL4035_MODE_ALS_ENABLE);
+-	if (ret < 0)
+-		return ret;
+ 
+ 	/* wait for 1 ALS integration cycle */
+-	msleep(data->als_it_val * 100);
++	msleep(vcnl4035_als_it_values[data->als_it_val]);
+ 
+ 	return 0;
+ }
+-- 
+2.34.1
+

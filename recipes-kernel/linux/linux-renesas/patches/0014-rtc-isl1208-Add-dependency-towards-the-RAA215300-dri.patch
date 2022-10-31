@@ -1,0 +1,31 @@
+From ff00ffd9295db56d0856ba51f1c54c16347e4390 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 6 Dec 2021 15:46:44 +0000
+Subject: [PATCH] rtc: isl1208: Add dependency towards the RAA215300 driver
+
+The RAA215300 PMIC chip contains the same RTC IP as the one
+found within the ISL1208 RTC chip, but the RTC driver is
+stand-alone.
+
+Add a soft dependency towards the RAA215300 driver so that
+if the RAA215300 driver is available the system will load
+the PMIC driver first so that it can enable the RTC in HW
+before launching the RTC driver.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ drivers/rtc/rtc-isl1208.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/rtc/rtc-isl1208.c b/drivers/rtc/rtc-isl1208.c
+index da5e50295539..b1f3196ca0cc 100644
+--- a/drivers/rtc/rtc-isl1208.c
++++ b/drivers/rtc/rtc-isl1208.c
+@@ -944,3 +944,4 @@ module_i2c_driver(isl1208_driver);
+ MODULE_AUTHOR("Herbert Valerio Riedel <hvr@gnu.org>");
+ MODULE_DESCRIPTION("Intersil ISL1208 RTC driver");
+ MODULE_LICENSE("GPL");
++MODULE_SOFTDEP("pre: renesas_raa215300");
+-- 
+2.34.1
+

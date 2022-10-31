@@ -1,0 +1,127 @@
+From ca0242301f153d740b449f6667bad7ebc4d0ba71 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Mon, 6 Dec 2021 17:27:39 +0000
+Subject: [PATCH] arm64: dts: renesas: barcode-poc: Add camera support
+
+We were originally supposed to use a Raspberry Pi compatible
+camera, but in the end we found that Google's Coral camera was
+better for what we needed.
+We have developed an adapter board for adapting the RPi camera
+interface to Google's Coral camera interface.
+
+Add device tree support for Google's Coral camera.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ .../boot/dts/renesas/barcode-poc-carrier.dtsi | 81 +++++++++++++++++++
+ 1 file changed, 81 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+index 6136646a456d..2e9f74dcb1fe 100644
+--- a/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
++++ b/arch/arm64/boot/dts/renesas/barcode-poc-carrier.dtsi
+@@ -6,6 +6,36 @@
+  */
+ 
+ / {
++	clk_ext_camera: clk_ext_camera {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <24000000>;
++	};
++
++	ov5645_vddd_1v5: 1p5v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vddd";
++		regulator-min-microvolt = <1500000>;
++		regulator-max-microvolt = <1500000>;
++		regulator-always-on;
++	};
++
++	ov5645_vdddo_1v8: 1p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vdddo";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
++	};
++
++	ov5645_vdda_2v8: 2p8v {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_vdda";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		regulator-always-on;
++	};
++
+ 	vbus0_usb2: regulator-vbus0-usb2 {
+ 		compatible = "regulator-fixed";
+ 
+@@ -15,6 +45,24 @@ vbus0_usb2: regulator-vbus0-usb2 {
+ 	};
+ };
+ 
++&cru {
++	status = "okay";
++};
++
++&csi2 {
++	status = "okay";
++
++	ports {
++		port {
++			csi2_in: endpoint {
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
++				remote-endpoint = <&camera_out>;
++			};
++		};
++	};
++};
++
+ &ehci0 {
+ 	dr_mode = "otg";
+ 	status = "okay";
+@@ -38,6 +86,39 @@ &i2c0 {
+ 	pinctrl-names = "default";
+ 
+ 	status = "okay";
++
++	camera: ov5645@3c {
++		compatible = "ovti,ov5645";
++		reg = <0x3c>;
++		clock-names = "xclk";
++		clocks = <&clk_ext_camera>;
++		clock-frequency = <24000000>;
++		vdddo-supply = <&ov5645_vdddo_1v8>;
++		vdda-supply = <&ov5645_vdda_2v8>;
++		vddd-supply = <&ov5645_vddd_1v5>;
++		// We are using an adapter board to connect Google's Coral
++		// Camera to an interface made for Raspberry Pi cameras.
++		// Google's Coral camera interface comes with two GPIOs, but
++		// Raspberry Pi cameras come with only one GPIO. The adapter
++		// board allows the user to select which GPIO from Google's
++		// Coral camera to connect to the GPIO found on this carrier
++		// board camera interface via a jumper.
++		// The GPIO available on the camera interface is P2_0, let's use
++		// it for controlling the reset of the Google's Coral camera.
++		reset-gpios = <&pinctrl RZG2L_GPIO(2, 0) GPIO_ACTIVE_LOW>;
++
++		// We need to please the ov5645 driver, so let's give it an
++		// unconnected GPIO for controlling the enable line.
++		enable-gpios = <&pinctrl RZG2L_GPIO(6, 0) GPIO_ACTIVE_HIGH>;
++
++		port {
++			camera_out: endpoint {
++				clock-lanes = <0>;
++				data-lanes = <1 2>;
++				remote-endpoint = <&csi2_in>;
++			};
++		};
++	};
+ };
+ 
+ &i2c3 {
+-- 
+2.34.1
+

@@ -8,9 +8,8 @@ LIC_FILES_CHKSUM = " \
 	file://licenses/LICENSE.barcode-poc;md5=d29a7703d172b62a0bf91c6d3d42ee47 \
 "
 
-# Use the latest commit from the branch we checkout
-SRCREV = "${AUTOREV}"
-PV = "dev+git${SRCPV}"
+# Tag v2.0
+SRCREV = "46408c2845e851e935713a8e5782a3305f14c921"
 PR = "r1"
 
 BARCODE_POC_URI ??= "git://git@github.com/renesas-rz/barcode-poc.git;protocol=ssh;branch=master"

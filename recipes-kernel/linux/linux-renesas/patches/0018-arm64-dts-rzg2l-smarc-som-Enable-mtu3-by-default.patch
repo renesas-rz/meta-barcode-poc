@@ -1,0 +1,28 @@
+From 67924c37fc1a1aa3fe80efad18e08653e2706d4e Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 16 Jun 2022 17:06:01 +0100
+Subject: [PATCH] arm64: dts: rzg2l-smarc-som: Enable mtu3 by default
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+index eac90230ffac..acc016367132 100644
+--- a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
++++ b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+@@ -231,6 +231,10 @@ rtc: isl1208@6f {
+ 	};
+ };
+ 
++&mtu3 {
++	status = "okay";
++};
++
+ &ostm1 {
+ 	status = "okay";
+ };
+-- 
+2.34.1
+

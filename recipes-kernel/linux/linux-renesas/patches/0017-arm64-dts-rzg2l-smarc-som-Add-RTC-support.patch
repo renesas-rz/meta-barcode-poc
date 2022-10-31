@@ -1,0 +1,40 @@
+From 35218ec2117cf70c03727480d5b470c3010c1646 Mon Sep 17 00:00:00 2001
+From: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+Date: Thu, 16 Jun 2022 16:55:24 +0100
+Subject: [PATCH] arm64: dts: rzg2l-smarc-som: Add RTC support
+
+Add support for the RTC found inside the Renesas PMIC RAA215300.
+
+Signed-off-by: Fabrizio Castro <fabrizio.castro.jz@renesas.com>
+---
+ arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+index 200c70fdbaba..eac90230ffac 100644
+--- a/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
++++ b/arch/arm64/boot/dts/renesas/rzg2l-smarc-som.dtsi
+@@ -215,6 +215,20 @@ versa3: versa3@68 {
+ 		clock-divider-read-only = <1>, <1>, <1>, <1>, <1>;
+ 		clock-flags = <2176>, <2176>, <2176>, <2052>, <2176>, <2048>;
+ 	};
++
++	pmic: raa215300@12 {
++		compatible = "renesas,raa215300";
++		reg = <0x12>;
++
++		rtc-enable;
++	};
++
++	rtc: isl1208@6f {
++		compatible = "isil,isl1208";
++		reg = <0x6f>;
++
++		external-oscillator;
++	};
+ };
+ 
+ &ostm1 {
+-- 
+2.34.1
+
