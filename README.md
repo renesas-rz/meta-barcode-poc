@@ -1,6 +1,9 @@
 This README file contains information on the contents of the
 meta-barcode-poc layer.
 
+To build the full barcode POC, access to application layer is needed.
+Please contact dirk.seidel.uj@renesas.com or abigail.sun.xh@renesas.com for access
+
 Please see the corresponding sections below for details.
 
 Dependencies
